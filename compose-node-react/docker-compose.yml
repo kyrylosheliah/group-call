@@ -1,0 +1,22 @@
+version: '3'
+services:
+  server:
+    build:
+      context: ../backend-node
+      dockerfile: ../backend-node/Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../backend-node/uploads:/app/uploads
+    working_dir: /app
+  client:
+    build:
+      context: ../frontend-react
+      dockerfile: ../frontend-react/Dockerfile
+    ports:
+      - "5000:5000"
+    volumes:
+      - ../frontend-react:/app
+      - /app/node_modules
+    working_dir: /app
+    command: npm start
