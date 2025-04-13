@@ -1,5 +1,5 @@
 {
-  "name": "group-chat-node-backend",
+  "name": "group-call-backend-node",
   "version": "1.0.0",
   "main": "./src/index.js",
   "scripts": {
