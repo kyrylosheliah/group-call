@@ -1,154 +1,246 @@
-import { createSignal, For, onMount } from "solid-js";
+import { onMount } from "solid-js";
 
-const SERVER_PORT = 3000;
-const ws = new WebSocket(`ws://localhost:${SERVER_PORT}`);
+import io from 'socket.io-client';
+import * as mediasoupClient from 'mediasoup-client';
+import { Device } from "mediasoup-client";
 
 const VideoChat = () => {
-  const [messages, setMessages] = createSignal<string[]>([]);
-  const [peers, setPeers] = createSignal<Record<string, RTCPeerConnection>>({});
-  const [localStream, setLocalStream] = createSignal<MediaStream | null>(null);
-  const videoRefs: Record<string, HTMLVideoElement | null> = {};
-  let inputRef: HTMLInputElement | undefined;
+  let localVideoRef: HTMLVideoElement | undefined;
+  let remoteVideoRef: HTMLVideoElement | undefined;
+  const socket = io('https://localhost:3000/mediasoup');
+  
+  onMount(() => {
+    socket.on('connection-success', ({ socketId }: any) => {
+      console.log(socketId);
+    });
+  });
 
-  const updatePeers = (id: string, pc: RTCPeerConnection) => {
-    setPeers((prev) => ({ ...prev, [id]: pc }));
+  let device: Device;
+  let rtpCapabilities: any;
+  let producerTransport: any;
+  let consumerTransport: any;
+  let producer: any;
+  let consumer: any;
+
+  // producer options
+  let params: any = {
+    encodings: [
+      { rid: 'r0', maxBitrate: 100000, scalabilityMode: 'S1T3' },
+      { rid: 'r1', maxBitrate: 300000, scalabilityMode: 'S1T3' },
+      { rid: 'r2', maxBitrate: 900000, scalabilityMode: 'S1T3' },
+    ],
+    codecOptions: {
+      videoGoogleStartBitrate: 1000,
+    },
   };
 
-  const handleSignal = async (data: any) => {
-    const peerMap = peers();
-    const pc = peerMap[data.from] || createPeer(data.from);
-    if (data.signal.type === "offer") {
-      await pc.setRemoteDescription(new RTCSessionDescription(data.signal));
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      ws.send(
-        JSON.stringify({
-          type: "signal",
-          to: data.from,
-          signal: pc.localDescription,
-        })
-      );
-    } else if (data.signal.type === "answer") {
-      await pc.setRemoteDescription(new RTCSessionDescription(data.signal));
-    } else if (data.signal.candidate) {
-      await pc.addIceCandidate(new RTCIceCandidate(data.signal));
-    }
-  };
+  const getLocalStream = () => {
+    navigator.mediaDevices
+      .getUserMedia({
+        audio: false,
+        video: { width: { min: 640, max: 1920 }, height: { min: 400, max: 1080 }, },
+      })
+      .then(async (stream: any) => {
+        localVideoRef!.srcObject = stream;
+        const track = stream.getVideoTracks()[0];
+        params = { track, ...params };
+      })
+      .catch((error: any) => {
+        console.log(error.message);
+      });
+  }
 
-  const createPeer = (id: string) => {
-    const pc = new RTCPeerConnection();
-    const stream = localStream();
-    if (stream) {
-      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
-    }
-    pc.onicecandidate = (e) => {
-      if (!e.candidate) return;
-      ws.send(JSON.stringify({ type: "signal", to: id, signal: e.candidate }));
-    };
-    pc.ontrack = (e) => {
-      const remoteStream = e.streams[0];
-      const el = videoRefs[id];
-      if (el && remoteStream) {
-        el.srcObject = remoteStream;
+  const getRtpCapabilities = () => {
+    socket.emit('getRtpCapabilities', (data: any) => {
+      console.log(`Router RtpCapabilities: ${data.rtpCapabbilities}`);
+      rtpCapabilities = data.rtpCapabilities;
+    })
+  }
+
+  const createDevice = async () => {
+    try {
+      device = new mediasoupClient.Device();
+      await device.load({
+        routerRtpCapabilities: rtpCapabilities,
+      });
+      console.log('RtpCapabilites', device.rtpCapabilities);
+    } catch (error: any) {
+      console.log(error);
+      if (error.name === 'UnsupportedError') {
+        console.warn('browser not supported');
       }
-    };
-    updatePeers(id, pc);
-    return pc;
+    }
+  }
+
+  const createSendTransport = () => {
+    socket.emit('createWebRtcTransport', { sender: true }, ({ params }: any) => {
+      if (params.error) {
+        console.log(params.error);
+        return;
+      }
+      console.log(params);
+
+      // create a new WebRTC Transport based on the server's producer transport params
+      producerTransport = device.createSendTransport(params);
+
+      // when a first call to transport.produce() is made
+      producerTransport.on('connect', async ({ dtlsParameters }: any, callback: any, errback: any) => {
+        try {
+          // signal local DTLS prameters to the server side transport
+          await socket.emit('transport-connect', {
+            dtlsParameters,
+          });
+          // tell the transport that parameters were transmitted
+          callback();
+        } catch (error: any) {
+          errback(error);
+        }
+      });
+
+      producerTransport.on('produce', async (parameters: any, callback: any, errback: any) => {
+        console.log(parameters);
+        try {
+          // thell the server to create a Producer with the following
+          // parameters and produce and expect back a server side producer id
+          await socket.emit('transport-produce', {
+            kind: parameters.kind,
+            rtpParameters: parameters.rtpParameters,
+            appData: parameters.appData,
+          }, ({ id }: any) => {
+            callback({ id });
+          });
+        } catch (error: any) {
+          errback(error);
+        }
+      })
+    });
   };
 
-  const callUser = async (id: string) => {
-    const pc = createPeer(id);
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    ws.send(
-      JSON.stringify({ type: "signal", to: id, signal: pc.localDescription })
+  const connectSendTransport = async () => {
+    //trigger the 'connect' and 'produce' events
+    producer = await producerTransport.produce(params);
+
+    producer.on('trackended', () => {
+      console.log('track ended');
+      // TODO: close video track
+    });
+    
+    producer.on('trasportclose', () => {
+      console.log('transport ended');
+      // TODO: close video track
+    });
+  };
+
+  const createRecvTransport = async () => {
+    // a call from Consumer wit sender = false
+    await socket.emit('createWebRtcTransport', { sender: false }, ({ params }: any) => {
+      // server sends back params needed to create Send Transport on client side
+      if (params.error) {
+        console.log(params.error);
+        return;
+      }
+      console.log(params);
+
+      // WebRTC Transport to receive media based on server's consumer transport params
+      consumerTransport = device.createRecvTransport(params);
+
+      // an event raised when the first call to transport.produce() is made
+      consumerTransport.on('connect', async ({ dtlsParameters }: any, callback: any, errback: any ) => {
+        try {
+          // signal local DTLS parameters to the server side transport
+          await socket.emit('transport-recv-connect', { dtlsParameters });
+          // tell the transport that parameters were transmitted
+          callback();
+        } catch (error) {
+          errback(error);
+        }
+      })
+    });
+  }
+
+  const connectRecvTransport = async () => {
+    await socket.emit(
+      'consume',
+      { rtpCapabilities: device.rtpCapabilities },
+      async ({ params }: any) => {
+        if (params.error) {
+          console.log('Cannot consume');
+          return;
+        }
+        console.log(params);
+
+        consumer = await consumerTransport.consume({
+          id: params.id,
+          producerId: params.producerId,
+          kind: params.kind,
+          rtpParameters: params.rtpParameters,
+        });
+
+        const { track } = consumer;
+        console.log(track);
+        remoteVideoRef!.srcObject = new MediaStream([track]);
+
+        // the server consumer started with media paused so we need to inform
+        // the server to resume
+        socket.emit('consumer-resume');
+      },
     );
   };
 
-  const sendChat = () => {
-    if (inputRef?.value) {
-      const test = JSON.stringify({ type: "chat", message: inputRef.value });
-      console.log(test);
-      ws.send(JSON.stringify({ type: "chat", message: inputRef.value }));
-      inputRef.value = "";
-    }
-  };
-
-  const sendFile = (e: Event) => {
-    const fileInput = e.currentTarget as HTMLInputElement;
-    const file = fileInput.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64 = (reader.result as string).split(",")[1];
-      ws.send(
-        JSON.stringify({
-          type: "file",
-          fileName: file.name,
-          fileDate: base64,
-        })
-      );
-    };
-    reader.readAsDataURL(file);
-  };
-
-  onMount(() => {
-    console.log("mount\n");
-    navigator.mediaDevices
-      .getUserMedia({ video: true, audio: true })
-      .then((stream) => {
-        setLocalStream(stream);
-        const localVideo = document.getElementById("local") as HTMLVideoElement;
-        if (localVideo) localVideo.srcObject = stream;
-        ws.send(
-          JSON.stringify({
-            type: "join",
-            name: "User" + Math.floor(Math.random() * 1000),
-          })
-        );
-      })
-      .catch((e) => {
-        console.log(e.name);
-      });
-    ws.onmessage = async (event) => {
-      const data = JSON.parse(event.data);
-      switch (data.type) {
-        case "user-joined":
-          await callUser(data.id);
-          break;
-        case "signal":
-          await handleSignal(data);
-          break;
-        case "chat":
-          setMessages([...messages(), `[${data.from}]: ${data.message}`]);
-          break;
-        case "file":
-          setMessages([
-            ...messages(),
-            `[${data.from}] Shared: <a href="${data.fileUrl}" target="_blank">${data.fileName}</a>`,
-          ]);
-          break;
-      }
-    };
-  });
-
   return (
-    <div>
-      <h2>WebRTC Chat (SolidJS)</h2>
-      <video id="local" autoplay muted width="200" />
-      <For each={Object.keys(peers())}>
-        {(id) => <video
-          ref={(el) => videoRefs[id] = el}
-          autoplay
-          width="200"
-        />}
-      </For>
-      <input ref={inputRef} placeholder="Message" />
-      <button onClick={sendChat}>Send</button>
-      <input type="file" onChange={sendFile} />
-      <For each={messages()}>
-        {(message) => <div>{message}</div>}
-      </For>
+    <div id="video">
+      <table>
+        <thead>
+          <tr>
+            <th>Local Video</th>
+            <th>Remote Video</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <video ref={localVideoRef} autoplay class="video" />
+            </td>
+            <td>
+              <video ref={remoteVideoRef} autoplay class="video" />
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <button onClick={getLocalStream}>1. Get Local Video</button>
+            </td>
+          </tr>
+          <tr>
+            <td colspan="2">
+              <div id="sharedBtns">
+                <button onClick={getRtpCapabilities}>2. Get Rtp Capabilities</button>
+                <br />
+                <button onClick={createDevice}>3. Create Device</button>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td>
+                <button onClick={createSendTransport}>
+                  4. Create Send Transport
+                </button>
+                <br />
+                <button onClick={connectSendTransport}>
+                  5. Connect Send Transport & Produce
+                </button>
+            </td>
+            <td>
+                <button onClick={createRecvTransport}>
+                  6. Create Recv Transport
+                </button>
+                <br />
+                <button onClick={connectRecvTransport}>
+                  7. Connect Recv Transport & Consume
+                </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   );
 };
