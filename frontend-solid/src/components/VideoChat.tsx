@@ -1,15 +1,23 @@
-import { onMount } from "solid-js";
+import { createSignal, For, onMount } from "solid-js";
 
-import io from 'socket.io-client';
+import io, { Socket } from 'socket.io-client';
 import * as mediasoupClient from 'mediasoup-client';
 import { Device } from "mediasoup-client";
 
 const VideoChat = () => {
   let localVideoRef: HTMLVideoElement | undefined;
   let remoteVideoRef: HTMLVideoElement | undefined;
-  const socket = io('https://localhost:3000/mediasoup');
+  let socket: Socket = undefined!;
+
+  let [WLH, setWLH] = createSignal<string>("0.0.0.0");
+  let [logging, setLogging] = createSignal<string>("");
   
   onMount(() => {
+    const hostname = `https://${window.location.hostname}:3000/mediasoup`;
+    setWLH(hostname);
+    socket = io(hostname, {
+      transports: ['websocket'],
+    });
     socket.on('connection-success', ({ socketId }: any) => {
       console.log(socketId);
     });
@@ -51,10 +59,13 @@ const VideoChat = () => {
   }
 
   const getRtpCapabilities = () => {
+    setLogging(`before socket.emit\n${logging()}`);
     socket.emit('getRtpCapabilities', (data: any) => {
+      setLogging(`after socket.emit\n${logging()}`);
       console.log(`Router RtpCapabilities: ${data.rtpCapabbilities}`);
       rtpCapabilities = data.rtpCapabilities;
-    })
+      setLogging(`Router RtpCapabilities: ${data.rtpCapabbilities}\n${logging()}`);
+    });
   }
 
   const createDevice = async () => {
@@ -66,9 +77,6 @@ const VideoChat = () => {
       console.log('RtpCapabilites', device.rtpCapabilities);
     } catch (error: any) {
       console.log(error);
-      if (error.name === 'UnsupportedError') {
-        console.warn('browser not supported');
-      }
     }
   }
 
@@ -189,6 +197,7 @@ const VideoChat = () => {
 
   return (
     <div id="video">
+      <div>{WLH()}</div>
       <table>
         <thead>
           <tr>
@@ -213,7 +222,9 @@ const VideoChat = () => {
           <tr>
             <td colspan="2">
               <div id="sharedBtns">
-                <button onClick={getRtpCapabilities}>2. Get Rtp Capabilities</button>
+                <button onClick={getRtpCapabilities}>
+                  2. Get Rtp Capabilities
+                </button>
                 <br />
                 <button onClick={createDevice}>3. Create Device</button>
               </div>
@@ -221,26 +232,27 @@ const VideoChat = () => {
           </tr>
           <tr>
             <td>
-                <button onClick={createSendTransport}>
-                  4. Create Send Transport
-                </button>
-                <br />
-                <button onClick={connectSendTransport}>
-                  5. Connect Send Transport & Produce
-                </button>
+              <button onClick={createSendTransport}>
+                4. Create Send Transport
+              </button>
+              <br />
+              <button onClick={connectSendTransport}>
+                5. Connect Send Transport & Produce
+              </button>
             </td>
             <td>
-                <button onClick={createRecvTransport}>
-                  6. Create Recv Transport
-                </button>
-                <br />
-                <button onClick={connectRecvTransport}>
-                  7. Connect Recv Transport & Consume
-                </button>
+              <button onClick={createRecvTransport}>
+                6. Create Recv Transport
+              </button>
+              <br />
+              <button onClick={connectRecvTransport}>
+                7. Connect Recv Transport & Consume
+              </button>
             </td>
           </tr>
         </tbody>
       </table>
+      <For each={logging().split("\n")}>{(line) => <div>{line}</div>}</For>
     </div>
   );
 };

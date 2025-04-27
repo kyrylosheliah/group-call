@@ -2,7 +2,7 @@
   "name": "example-with-unocss",
   "type": "module",
   "scripts": {
-    "dev": "vinxi dev --port 5000",
+    "dev": "vinxi dev --port 5000 --host",
     "build": "vinxi build --port 5000",
     "start": "vinxi start --port 5000"
   },

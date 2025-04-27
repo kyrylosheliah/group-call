@@ -1,9 +1,7 @@
 import { Component, createContext, JSX, onMount, useContext } from "solid-js";
 import { createStore } from "solid-js/store";
 
-export const SERVER_PORT = 3000;
-
-export const getServerWebSocketURL = () => `ws://localhost:${SERVER_PORT}`;
+export const getServerWebSocketURL = () => `ws://192.168.1.109:3000`;
 
 const connect = () => new WebSocket(getServerWebSocketURL());
 
