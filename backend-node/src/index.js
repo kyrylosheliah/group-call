@@ -20,23 +20,6 @@ httpsServer.listen(config.http.port, config.domain, () => {
   console.log('listening on port: ' + config.http.port);
 });
 
-// function getIpAddresses() {
-//   var addresses = [];
-//   var interfaces = os.networkInterfaces();
-//   for (var iname in interfaces) {
-//     var iface = interfaces[iname];
-//     for (var i = 0; i < iface.length; i++) {
-//       var alias = iface[i];
-//       if (alias.family === 'IPv4' && alias.address !== '127.0.0.1' && !alias.internal) {
-//         console.log(alias.address);
-//         addresses.push({ ip: alias.address, announcedAddress: null });
-//         //return alias.address;
-//       }
-//     }
-//   }
-//   return addresses;
-//}
-
 const io = new Server(httpsServer, {
   cors: {
     origin: [
@@ -66,7 +49,7 @@ const createWorker = async () => {
     rtcMaxPort: 2020,
   });
   console.log(`worker pid ${worker.pid}`);
-  worker.on('died', error => {
+  worker.on('died', (error) => {
     // something serious happened
     console.error('mediasoup worker has died');
     // exit in 2 sec
@@ -86,7 +69,8 @@ const mediaCodecs = [
 peers.on('connection', async (socket) => {
   console.log(socket.id);
   socket.emit('connection-success', {
-    socketId: socket.id
+    socketId: socket.id,
+    existsProducer: producer ? true : false,
   });
 
   socket.on('disconnect', () => {
@@ -94,17 +78,32 @@ peers.on('connection', async (socket) => {
     console.log('peer disconnected');
   });
 
+  socket.on('createRoom', async (callback) => {
+    if (router === undefined) {
+      //worker.createRouter(options);
+      //options = { mediaCodecs, appData };
+      router = await worker.createRouter({ mediaCodecs });
+      console.log(`Router ID: ${router.id}`);
+    }
+    getRtpCapabilities(callback);
+  });
+
+  const getRtpCapabilities = (callback) => {
+    const rtpCapabilities = router.rtpCapabilities;
+    callback({ rtpCapabilities });
+  };
+
   //worker.createRouter(options);
   //options = { mediaCodecs, appData };
-  router = await worker.createRouter({ mediaCodecs });
+  //router = await worker.createRouter({ mediaCodecs });
 
-  socket.on('getRtpCapabilities', (callback) => {
-    // client emits a request for RtpCapabilities
-    const rtpCapabilities = router.rtpCapabilities;
-    console.log('rtp Capabilities', rtpCapabilities);
-    // call the client's callback
-    callback({ rtpCapabilities });
-  })
+  // socket.on('getRtpCapabilities', (callback) => {
+  //   // client emits a request for RtpCapabilities
+  //   const rtpCapabilities = router.rtpCapabilities;
+  //   console.log('rtp Capabilities', rtpCapabilities);
+  //   // call the client's callback
+  //   callback({ rtpCapabilities });
+  // })
 
   socket.on('createWebRtcTransport', async ({ sender }, callback) => {
     console.log(`Is this a sender request? ${sender}`);
