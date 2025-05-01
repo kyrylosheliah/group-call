@@ -1,10 +1,11 @@
+# SFU group call app
 
 ```
 choco install mkcert
 mkdir ./.ssl/
 cd ./.ssl/
 mkcert -install -key-file key.pem -cert-file cert.pem localhost 127.0.0.1 ::1 192.168.1.109
-# copy and apply `C:\Users\I\AppData\Local\mkcert\rootCA.pem` onto another
+# copy and apply `C:\Users\I\AppData\Local\mkcert\rootCA.pem` on other
 # devices for LAN testing
 ```
 
@@ -31,3 +32,6 @@ sudo docker-compose up --build
     - "join room" action via feed
     - "join room" action via link
 - (non-priority) Room upgrade feature to enable seamless call to group transition
+
+### Props
+- Amir Eshaq SFU [implementation](https://github.com/jamalag/mediasoup3)
