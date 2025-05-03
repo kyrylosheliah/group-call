@@ -79,6 +79,7 @@ const createWorker = async () => {
   worker = await mediasoup.createWorker({
     rtcMinPort: 50000,
     rtcMaxPort: 59999,
+    ...config.mediasoup.workerSettings,
   });
   log1stage(`createWorker() | pid ${worker.pid}`);
   worker.on('died', (error) => {
@@ -86,18 +87,13 @@ const createWorker = async () => {
     setTimeout(() => process.exit(1), 2000);
   });
   return worker;
-}
+};
 
-worker = createWorker()
-
-// an array of RtpCapabilities
-const mediaCodecs = [
-  { kind: 'audio', mimeType: 'audio/opus', clockRate: 48000, channels: 2 },
-  { kind: 'video', mimeType: 'video/VP8', clockRate: 90000, parameters: { 'x-google-start-bitrate': 1000 } },
-];
+worker = createWorker();
 
 connections.on('connection', async (socket) => {
   log1stage(`[${socket.id}] connections.on 'connection'`);
+
   socket.emit('connection-success', {
     socketId: socket.id,
   });
@@ -110,7 +106,7 @@ connections.on('connection', async (socket) => {
     });
     items = items.filter(item => item.socketId !== socket.id);
     return items;
-  }
+  };
 
   socket.on('disconnect', () => {
     log1stage(`[${socket.id}] socket.on 'disconnect'`);
@@ -150,7 +146,7 @@ connections.on('connection', async (socket) => {
   const createRoom = async (roomName, socketId) => {
     if (!rooms[roomName]) {
       rooms[roomName] = {
-        router: await worker.createRouter({ mediaCodecs }),
+        router: await worker.createRouter(config.mediasoup.routerOptions),
         peers: [],
       };
     }
@@ -345,22 +341,13 @@ connections.on('connection', async (socket) => {
   });
 });
 
-
-const webRtcTransport_options = {
-  listenInfos: [
-    //{ ip: '0.0.0.0', announcedAddress: "127.0.0.1" }, // docker
-    { ip: '127.0.0.1', announcedAddress: null },
-    ...getIpAddresses(),
-  ],
-  enableUdp: true,
-  enableTcp: true,
-  preferUdp: true,
-};
-
 const createWebRtcTransport = async (router) => {
   return new Promise(async (resolve, reject) => {
     try {
-      let transport = await router.createWebRtcTransport(webRtcTransport_options);
+      let transport = await router.createWebRtcTransport(
+        //webRtcTransport_options
+        config.mediasoup.webRtcTransportOptions
+      );
       log1stage(`createWebRtcTransport() | transport.id ${transport.id}`);
       transport.on('dtlsstatechange', (dtlsState) => {
         log1stage(`transport.on 'dtlsstatechange' | dtlsState ${dtlsState} | transport.id ${transport.id}`);
@@ -378,4 +365,4 @@ const createWebRtcTransport = async (router) => {
       reject(error);
     }
   });
-}
+};
