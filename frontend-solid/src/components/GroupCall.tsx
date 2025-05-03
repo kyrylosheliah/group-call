@@ -1,17 +1,15 @@
-import { createSignal, For, onMount, Show } from "solid-js";
+import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 
 import io, { Socket } from 'socket.io-client';
 import * as mediasoupClient from 'mediasoup-client';
 import { Device } from "mediasoup-client";
-import { useParams } from "@solidjs/router";
 import { ProducerOptions } from "mediasoup-client/types";
 
-const GroupCall = () => {
+const GroupCall = (params: {
+  roomName: string;
+}) => {
   let localVideoRef: HTMLVideoElement | undefined;
   let socket: Socket = undefined!;
-
-  const params = useParams();
-  const roomName = () => params.id;
 
   let device: Device;
   let rtpCapabilities: any;
@@ -21,20 +19,18 @@ const GroupCall = () => {
   let videoProducer: any;
   //let consumer: any;
 
-  let mediasoupProducerOptions: ProducerOptions = {
-    encodings: [
-      { rid: 'r0', maxBitrate: 100000, scalabilityMode: 'S1T3' },
-      { rid: 'r1', maxBitrate: 300000, scalabilityMode: 'S1T3' },
-      { rid: 'r2', maxBitrate: 900000, scalabilityMode: 'S1T3' },
-    ],
-    codecOptions: {
-      videoGoogleStartBitrate: 1000,
-    },
-  };
-
   let audioParams: any = {};
   let videoParams: { params: ProducerOptions, track: MediaStreamTrack } = {
-    params: mediasoupProducerOptions,
+    params: {
+      encodings: [
+        { rid: 'r0', maxBitrate: 100000, scalabilityMode: 'S1T3' },
+        { rid: 'r1', maxBitrate: 300000, scalabilityMode: 'S1T3' },
+        { rid: 'r2', maxBitrate: 900000, scalabilityMode: 'S1T3' },
+      ],
+      codecOptions: {
+        videoGoogleStartBitrate: 1000,
+      },
+    },
     track: undefined!,
   };
   let consumingTransports: any[] = [];
@@ -71,11 +67,23 @@ const GroupCall = () => {
       producerToClose.consumerTranport.close();
       producerToClose.consumer.close();
       // remove consumer transport from the list
-      setConsumerTransports(
-        consumerTransports().filter(ct => ct.producerId !== data.remoteProducerId)
+      setConsumerTransports(cts =>
+        cts.filter(ct => ct.producerId !== data.remoteProducerId)
       );
     });
   });
+
+  const getLocalStream = () => {
+    navigator.mediaDevices
+      .getUserMedia({
+        audio: true,
+        video: { width: { min: 640, max: 1920 }, height: { min: 400, max: 1080 }, },
+      })
+      .then(streamSuccess)
+      .catch((error: any) => {
+        console.log(error.message);
+      });
+  };
 
   const streamSuccess = async (stream: MediaStream) => {
     console.log(`streamSuccess() :`, stream);
@@ -86,24 +94,12 @@ const GroupCall = () => {
   };
 
   const joinRoom = () => {
-    socket.emit('joinRoom', { roomName }, (data: any) => {
+    socket.emit('joinRoom', { roomName: params.roomName }, (data: any) => {
       console.log("socket.emit 'joinRoom' =>", data);
       rtpCapabilities = data.rtpCapabilities;
       createDevice();
     });
   };
-
-  const getLocalStream = () => {
-    navigator.mediaDevices
-      .getUserMedia({
-        audio: false,
-        video: { width: { min: 640, max: 1920 }, height: { min: 400, max: 1080 }, },
-      })
-      .then(streamSuccess)
-      .catch((error: any) => {
-        console.log(error.message);
-      });
-  }
 
   const createDevice = async () => {
     try {
@@ -129,10 +125,9 @@ const GroupCall = () => {
       console.log("socket.emit 'createWebRtcTransport' =>", data);
 
       if (data.params.error) {
-        console.log(data.params.error);
+        console.log("[!error] socket.emit 'createWebRtcTransport' ... data.params.error");
         return;
       }
-      console.log(data.params);
 
       // create a new WebRTC Transport based on the server's producer transport params
       producerTransport = device.createSendTransport(data.params);
@@ -155,7 +150,9 @@ const GroupCall = () => {
       });
 
       producerTransport.on('produce', async (
-        data: any, callback: any, errback: any
+        data: any,
+        callback: any,
+        errback: any,
       ) => {
         console.log("producerTransport.on 'produce' :", data);
         try {
@@ -168,10 +165,10 @@ const GroupCall = () => {
               rtpParameters: data.rtpParameters,
               appData: data.appData,
             },
-            (data: { id: any, producerExist: any }) => {
+            (data: { id: any, producersExist: any }) => {
               console.log("socket.emit 'transport-produce' =>", data);
               callback({ id: data.id });
-              if (data.producerExist) {
+              if (data.producersExist) {
                 getProducers();
               }
             },
@@ -179,13 +176,15 @@ const GroupCall = () => {
         } catch (error: any) {
           errback(error);
         }
-      })
+      });
 
       connectSendTransport();
     });
   };
 
   const connectSendTransport = async () => {
+    //console.log("connectSendTransport() :", audioParams);
+    //console.log("connectSendTransport() :", videoParams);
     //trigger the 'connect' and 'produce' events
     audioProducer = await producerTransport.produce(audioParams);
     videoProducer = await producerTransport.produce(videoParams);
@@ -208,6 +207,13 @@ const GroupCall = () => {
     videoProducer.on('transportclose', () => {
       console.log("videoProducer.on 'transportclose'");
       // TODO: close the transport
+    });
+  };
+
+  const getProducers = () => {
+    socket.emit('getProducers', (producerIds: any) => {
+      console.log("consumerTransport.emit 'getProducers' =>", producerIds);
+      producerIds.forEach(signalNewConsumerTransport);
     });
   };
 
@@ -252,18 +258,11 @@ const GroupCall = () => {
         } catch (error) {
           errback(error);
         }
-      })
+      });
 
       connectRecvTransport(consumerTransport, remoteProducerId, data.params.id);
     });
   }
-
-  const getProducers = () => {
-    socket.emit('getProducers', (producerIds: any) => {
-      console.log("consumerTransport.emit 'getProducers' =>", producerIds);
-      producerIds.forEach(signalNewConsumerTransport);
-    });
-  };
 
   const connectRecvTransport = async (
     consumerTransport: any,
@@ -294,41 +293,51 @@ const GroupCall = () => {
         //  rtpParameters: data.params.rtpParameters,
         //});
 
-        // TODO: questionable
-        const cts = consumerTransports();
-        console.log("cts before", cts);
-        cts.push({
-          consumerTransport,
-          serverConsumerTransportId: data.params.id,
-          producerId: remoteProducerId,
-          consumer,
-        });
-        // should trigger <For each={}> dynamic srcObject binding
-        setConsumerTransports(cts);
-        console.log("cts after", cts);
-        console.log("consumerTransports after", consumerTransports());
+        setConsumerTransports(cts => [
+          ...cts,
+          {
+            consumerTransport,
+            serverConsumerTransportId: data.params.id,
+            producerId: remoteProducerId,
+            consumer,
+          },
+        ]);
 
         // the server consumer started with media paused so we need to inform
         // the server to resume
-        socket.emit('consumer-resume', { serverConsumerId: params.serverConsumerId });
+        socket.emit('consumer-resume', { serverConsumerId: data.params.serverConsumerId });
       },
     );
   };
 
   return (
     <div>
-      <div>Room "{roomName()}"</div>
+      <div>Room "{params.roomName}"</div>
+      <button onClick={() => {
+        console.log(consumerTransports());
+      }}>log consumer transports</button>
       <div><video ref={localVideoRef} autoplay class="video" /></div>
       <Show
         fallback={<div>No room specified</div>}
-        when={roomName()}
+        when={params.roomName}
       >
-        <For each={consumerTransports()}>{
-          (ct, index) => (<div><video autoplay class="video" ref={(ref) => {
-            console.log("rendering consumer source index", index);
-            ref.srcObject = new MediaStream([ct.consumer.track]);
-          }} /></div>)
-        }</For>
+        <Show
+          fallback={<div>No other participants present</div>}
+          when={consumerTransports().length}
+        >
+          <For each={consumerTransports()}>{(ct, index) => (<div>
+            <video autoplay class="video"
+              ref={(videoRef) => {
+                console.log("rendering consumer source index", index);
+                videoRef.srcObject = new MediaStream([ct.consumer.track]);
+                //setTimeout(bindStream, 0);
+                //onCleanup(() => {
+                //  if (videoRef) videoRef.srcObject = null;
+                //});
+              }}
+            />
+          </div>)}</For>
+        </Show>
       </Show>
     </div>
   );

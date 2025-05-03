@@ -6,9 +6,39 @@ import os from 'os';
 import mediasoup from 'mediasoup';
 
 import config from './config.js';
+const getIpAddresses = () => {
+  var addresses = [];
+  var interfaces = os.networkInterfaces();
+  for (const iname in interfaces) {
+    var iface = interfaces[iname];
+    for (const network of iface) {
+      if (
+        network.family === 'IPv4'
+        && network.address !== '127.0.0.1'
+        && !network.internal
+      ) {
+        console.log(network.address);
+        for (const protocol in ["tcp", "udp"]) {
+          addresses.push({
+            protocol: protocol,
+            ip: network.address,
+            announcedAddress: null,
+            portRange: {
+              min: 40000,
+              max: 49999,
+            },
+          });
+        }
+      }
+    }
+  }
+  return addresses;
+};
+config.mediasoup.webRtcTransportOptions.listenInfos.push(
+  ...getIpAddresses()
+);
 
 const expressApp = express();
-
 const httpsServer = https.createServer(
   {
     key: fs.readFileSync(config.http.tls.key, 'utf-8'),
@@ -19,7 +49,6 @@ const httpsServer = https.createServer(
 httpsServer.listen(config.http.port, config.domain, () => {
   console.log('listening on port: ' + config.http.port);
 });
-
 const io = new Server(httpsServer, {
   cors: {
     origin: [
@@ -40,15 +69,10 @@ const connections = io.of('/mediasoup');
 
 const str = (o) => JSON.stringify(o);
 
-connections.on('connection', (socket) => {
-  console.log(`connections.on 'connection' | socket.id: ${socket.id}`);
-  socket.emit('connection-success', { socketId: socket.id });
-});
-
 const createWorker = async () => {
   worker = await mediasoup.createWorker({
-    rtcMinPort: 2000,
-    rtcMaxPort: 2020,
+    rtcMinPort: 50000,
+    rtcMaxPort: 59999,
   });
   console.log(`createWorker() | pid ${worker.pid}`);
   worker.on('died', (error) => {
@@ -87,6 +111,10 @@ connections.on('connection', async (socket) => {
     consumers = removeItems(consumers, socket.id, 'consumer');
     producers = removeItems(producers, socket.id, 'producer');
     transports = removeItems(transports, socket.id, 'transport');
+    if (!peers[socket.id]) {
+      console.log(`[${socket.id}] socket.on 'disconnect' ... peers[socket.id] is undefined`);
+      return;
+    }
     const { roomName } = peers[socket.id];
     delete peers[socket.id];
     rooms[roomName].peers = rooms[roomName].peers.filter(
@@ -97,7 +125,7 @@ connections.on('connection', async (socket) => {
   socket.on('joinRoom', async (data, callback) => {
     console.log(`[${socket.id}] socket.on 'joinRoom' | ${str(data)}`);
     const { roomName } = data;
-    const router1 = await createRoom(roomName, socket.id);
+    const router = await createRoom(roomName, socket.id);
     peers[socket.id] = {
       socket,
       roomName,
@@ -109,7 +137,7 @@ connections.on('connection', async (socket) => {
         isAdmin: false,
       },
     };
-    const rtpCapabilities = router1.rtpCapabilities;
+    const rtpCapabilities = router.rtpCapabilities;
     callback({ rtpCapabilities });
   });
 
@@ -205,7 +233,7 @@ connections.on('connection', async (socket) => {
   });
 
   const informConsumers = (roomName, socketId, id) => {
-    console.log(`${socketId} informConsumers() | id ${id} joined ${roomName}`);
+    console.log(`[${socketId}] informConsumers() | id ${id} joined ${roomName}`);
     producers.forEach(p => {
       if (p.socketId !== socketId && p.roomName === roomName) {
         const producerSocket = peers[p.socketId].socket;
@@ -234,7 +262,6 @@ connections.on('connection', async (socket) => {
     const { roomName } = peers[socket.id];
     addProducer(producer, roomName);
     informConsumers(roomName, socket.id, producer.id);
-    console.log('Producer ID: ', producer.id, producer.kind);
     producer.on('transportclose', () => {
       console.log(`[${socket.id}] producer.on 'transportclose'`);
       console.log('transport for this producer closed');
@@ -243,7 +270,7 @@ connections.on('connection', async (socket) => {
     // send the producer's id back to the client
     callback({
       id: producer.id,
-      producersExist: producers.length > 1
+      producersExist: producers.length > 0
     });
   });
 
@@ -255,7 +282,7 @@ connections.on('connection', async (socket) => {
     } = data;
     const consumerTransport = transports.find(
       t => t.consumer && t.transport.id === serverConsumerTransportId
-    ).transport;
+    ).transport; // TypeError: Cannot read properties of undefined (reading 'transport')
     await consumerTransport.connect({ dtlsParameters });
   });
 
@@ -316,22 +343,7 @@ connections.on('connection', async (socket) => {
   });
 });
 
-const getIpAddresses = () => {
-  var addresses = [];
-  var interfaces = os.networkInterfaces();
-  for (var iname in interfaces) {
-    var iface = interfaces[iname];
-    for (var i = 0; i < iface.length; i++) {
-      var alias = iface[i];
-      if (alias.family === 'IPv4' && alias.address !== '127.0.0.1' && !alias.internal) {
-        console.log(alias.address);
-        addresses.push({ ip: alias.address, announcedAddress: null });
-        //return alias.address;
-      }
-    }
-  }
-  return addresses;
-}
+
 const webRtcTransport_options = {
   listenInfos: [
     //{ ip: '0.0.0.0', announcedAddress: "127.0.0.1" }, // docker
@@ -349,14 +361,13 @@ const createWebRtcTransport = async (router) => {
       let transport = await router.createWebRtcTransport(webRtcTransport_options);
       console.log(`createWebRtcTransport() | transport.id ${transport.id}`);
       transport.on('dtlsstatechange', (dtlsState) => {
-        console.log(` transport.on 'dtlsstatechange' | dtlsState ${dtlsState}`);
+        console.log(`transport.on 'dtlsstatechange' | dtlsState ${dtlsState} | transport.id ${transport.id}`);
         if (dtlsState === 'closed') {
           transport.close();
         }
       });
       transport.on('close', () => {
-        console.log(` transport.on 'close'`);
-        console.log('transport closed');
+        console.log(`transport.on 'close' | transport.id ${transport.id}`);
       });
       resolve(transport);
     } catch (error) {

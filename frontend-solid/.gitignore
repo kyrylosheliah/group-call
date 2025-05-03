@@ -1,6 +1,3 @@
-# certificates
-.cert/
-
 dist
 .wrangler
 .output
