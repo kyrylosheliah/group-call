@@ -325,18 +325,20 @@ const GroupCall = (params: {
           fallback={<div>No other participants present</div>}
           when={consumerTransports().length}
         >
-          <For each={consumerTransports()}>{(ct, index) => (<div>
-            <video autoplay class="video"
-              ref={(videoRef) => {
+          <For each={consumerTransports()}>{(ct, index) => {
+            if (ct.consumer.kind === "video") {
+              return <video autoplay class="video" ref={(videoRef) => {
                 console.log("rendering consumer source index", index);
                 videoRef.srcObject = new MediaStream([ct.consumer.track]);
-                //setTimeout(bindStream, 0);
-                //onCleanup(() => {
-                //  if (videoRef) videoRef.srcObject = null;
-                //});
-              }}
-            />
-          </div>)}</For>
+              }}/>;
+            } else if (ct.consumer.kind === "audio") {
+              return <audio autoplay ref={(audioRef) => {
+                console.log("rendering consumer source index", index);
+                audioRef.srcObject = new MediaStream([ct.consumer.track]);
+              }}/>;
+            }
+            return <></>;
+          }}</For>
         </Show>
       </Show>
     </div>

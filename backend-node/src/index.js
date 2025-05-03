@@ -4,8 +4,14 @@ import https from 'https';
 import { Server } from 'socket.io';
 import os from 'os';
 import mediasoup from 'mediasoup';
-
 import config from './config.js';
+import { whitelistLogTags } from './logger.js';
+
+//const logging = whitelistLogTags(["stage1", "stage2"]);
+const logging = whitelistLogTags(["stage2"]);
+const log1stage = logging.createTaggedLogger("stage1");
+const log2stage = logging.createTaggedLogger("stage2");
+
 const getIpAddresses = () => {
   var addresses = [];
   var interfaces = os.networkInterfaces();
@@ -74,7 +80,7 @@ const createWorker = async () => {
     rtcMinPort: 50000,
     rtcMaxPort: 59999,
   });
-  console.log(`createWorker() | pid ${worker.pid}`);
+  log1stage(`createWorker() | pid ${worker.pid}`);
   worker.on('died', (error) => {
     console.error("worker.on 'died'", error);
     setTimeout(() => process.exit(1), 2000);
@@ -91,7 +97,7 @@ const mediaCodecs = [
 ];
 
 connections.on('connection', async (socket) => {
-  console.log(`[${socket.id}] connections.on 'connection'`);
+  log1stage(`[${socket.id}] connections.on 'connection'`);
   socket.emit('connection-success', {
     socketId: socket.id,
   });
@@ -107,12 +113,12 @@ connections.on('connection', async (socket) => {
   }
 
   socket.on('disconnect', () => {
-    console.log(`[${socket.id}] socket.on 'disconnect'`);
+    log1stage(`[${socket.id}] socket.on 'disconnect'`);
     consumers = removeItems(consumers, socket.id, 'consumer');
     producers = removeItems(producers, socket.id, 'producer');
     transports = removeItems(transports, socket.id, 'transport');
     if (!peers[socket.id]) {
-      console.log(`[${socket.id}] socket.on 'disconnect' ... peers[socket.id] is undefined`);
+      log1stage(`[${socket.id}] socket.on 'disconnect' ... peers[socket.id] is undefined`);
       return;
     }
     const { roomName } = peers[socket.id];
@@ -123,7 +129,7 @@ connections.on('connection', async (socket) => {
   });
 
   socket.on('joinRoom', async (data, callback) => {
-    console.log(`[${socket.id}] socket.on 'joinRoom' | ${str(data)}`);
+    log1stage(`[${socket.id}] socket.on 'joinRoom' | ${str(data)}`);
     const { roomName } = data;
     const router = await createRoom(roomName, socket.id);
     peers[socket.id] = {
@@ -151,7 +157,7 @@ connections.on('connection', async (socket) => {
     const room = rooms[roomName];
     const router = room.router;
     const peers = room.peers;
-    console.log(`createRoom() | roomName ${roomName} | router.id ${router.id} | peers.length ${peers.length}`);
+    log1stage(`createRoom() | roomName ${roomName} | router.id ${router.id} | peers.length ${peers.length}`);
     room.peers.push(socketId);
     return router;
   };
@@ -161,7 +167,7 @@ connections.on('connection', async (socket) => {
   //    //worker.createRouter(options);
   //    //options = { mediaCodecs, appData };
   //    router = await worker.createRouter({ mediaCodecs });
-  //    console.log(`Router ID: ${router.id}`);
+  //    log1stage(`Router ID: ${router.id}`);
   //  }
   //  getRtpCapabilities(callback);
   //});
@@ -178,30 +184,27 @@ connections.on('connection', async (socket) => {
   // socket.on('getRtpCapabilities', (callback) => {
   //   // client emits a request for RtpCapabilities
   //   const rtpCapabilities = router.rtpCapabilities;
-  //   console.log('rtp Capabilities', rtpCapabilities);
+  //   log1stage('rtp Capabilities', rtpCapabilities);
   //   // call the client's callback
   //   callback({ rtpCapabilities });
   // })
 
   socket.on('createWebRtcTransport', async (data, callback) => {
-    console.log(`[${socket.id}] socket.on 'createWebRtcTransport' | ${str(data)}`);
+    log1stage(`[${socket.id}] socket.on 'createWebRtcTransport' | ${str(data)}`);
     const { consumer } = data;
     const roomName = peers[socket.id].roomName;
     const router = rooms[roomName].router;
-    createWebRtcTransport(router).then(
-      (transport) => {
-        callback({params: {
-          id: transport.id,
-          iceParameters: transport.iceParameters,
-          iceCandidates: transport.iceCandidates,
-          dtlsParameters: transport.dtlsParameters,
-        }});
-        addTransport(transport, roomName, consumer);
-      },
-      (error) => {
-        console.log(error);
-      }
-    );
+    createWebRtcTransport(router).then((transport) => {
+      callback({params: {
+        id: transport.id,
+        iceParameters: transport.iceParameters,
+        iceCandidates: transport.iceCandidates,
+        dtlsParameters: transport.dtlsParameters,
+      }});
+      addTransport(transport, roomName, consumer);
+    }).catch((error) => {
+      console.error(error);
+    });
   });
 
   const addTransport = (transport, roomName, consumer) => {
@@ -220,7 +223,7 @@ connections.on('connection', async (socket) => {
   };
 
   socket.on('getProducers', (callback) => {
-    console.log(`[${socket.id}] socket.on 'getProducers'`);
+    log1stage(`[${socket.id}] socket.on 'getProducers'`);
     // return all producer transports
     const { roomName } = peers[socket.id];
     let producerList = [];
@@ -233,7 +236,7 @@ connections.on('connection', async (socket) => {
   });
 
   const informConsumers = (roomName, socketId, id) => {
-    console.log(`[${socketId}] informConsumers() | id ${id} joined ${roomName}`);
+    log1stage(`[${socketId}] informConsumers() | id ${id} joined ${roomName}`);
     producers.forEach(p => {
       if (p.socketId !== socketId && p.roomName === roomName) {
         const producerSocket = peers[p.socketId].socket;
@@ -250,21 +253,20 @@ connections.on('connection', async (socket) => {
   }
 
   socket.on('transport-connect', (data) => {
-    console.log(`[${socket.id}] socket.on 'transport-connect' | ${str(data)}`);
+    log1stage(`[${socket.id}] socket.on 'transport-connect' | ${str(data)}`);
     const { dtlsParameters } = data;
     getTransport(socket.id).connect({ dtlsParameters });
   });
 
   socket.on('transport-produce', async (data, callback) => {
-    console.log(`[${socket.id}] socket.on 'transport-produce' | ${str(data)}`);
+    log1stage(`[${socket.id}] socket.on 'transport-produce' | ${str(data)}`);
     const { kind, rtpParameters, appData } = data;
     const producer = await getTransport(socket.id).produce({ kind, rtpParameters });
     const { roomName } = peers[socket.id];
     addProducer(producer, roomName);
     informConsumers(roomName, socket.id, producer.id);
     producer.on('transportclose', () => {
-      console.log(`[${socket.id}] producer.on 'transportclose'`);
-      console.log('transport for this producer closed');
+      log1stage(`[${socket.id}] producer.on 'transportclose'`);
       producer.close();
     });
     // send the producer's id back to the client
@@ -275,7 +277,7 @@ connections.on('connection', async (socket) => {
   });
 
   socket.on('transport-recv-connect', async (data) => {
-    console.log(`[${socket.id}] socket.on 'transport-recv-connect' | ${str(data)}`);
+    log1stage(`[${socket.id}] socket.on 'transport-recv-connect' | ${str(data)}`);
     const {
       dtlsParameters,
       serverConsumerTransportId,
@@ -287,7 +289,7 @@ connections.on('connection', async (socket) => {
   });
 
   socket.on('consume', async (data, callback) => {
-    console.log(`[${socket.id}] socket.on 'consume' | ${str(data)}`);
+    log1stage(`[${socket.id}] socket.on 'consume' | ${str(data)}`);
     const {
       rtpCapabilities,
       remoteProducerId,
@@ -309,11 +311,11 @@ connections.on('connection', async (socket) => {
           paused: true,
         });
         consumer.on('transportclose', () => {
-          console.log(`[${socket.id}] consumer.on 'transportclose'`);
-          console.log('transport close from consumer');
+          log1stage(`[${socket.id}] consumer.on 'transportclose'`);
+          log1stage('transport close from consumer');
         })
         consumer.on('producerclose', () => {
-          console.log(`[${socket.id}] consumer.on 'producerclose'`);
+          log1stage(`[${socket.id}] consumer.on 'producerclose'`);
           socket.emit('producer-closed', { remoteProducerId });
           consumerTransport.close([]);
           transports = transports.filter(t => t.transport.id !== consumerTransport.id);
@@ -331,12 +333,12 @@ connections.on('connection', async (socket) => {
         callback({ params });
       }
     } catch (error) {
-      console.log(error.message);
+      console.error(error.message);
       callback({ params: { error: error } });
     }
   });
   socket.on('consumer-resume', async (data) => {
-    console.log(`[${socket.id}] socket.on 'consumer-resume' | ${str(data)}`);
+    log1stage(`[${socket.id}] socket.on 'consumer-resume' | ${str(data)}`);
     const { serverConsumerId } = data;
     const { consumer } = consumers.find(c => c.consumer.id === serverConsumerId);
     await consumer.resume();
@@ -359,19 +361,19 @@ const createWebRtcTransport = async (router) => {
   return new Promise(async (resolve, reject) => {
     try {
       let transport = await router.createWebRtcTransport(webRtcTransport_options);
-      console.log(`createWebRtcTransport() | transport.id ${transport.id}`);
+      log1stage(`createWebRtcTransport() | transport.id ${transport.id}`);
       transport.on('dtlsstatechange', (dtlsState) => {
-        console.log(`transport.on 'dtlsstatechange' | dtlsState ${dtlsState} | transport.id ${transport.id}`);
+        log1stage(`transport.on 'dtlsstatechange' | dtlsState ${dtlsState} | transport.id ${transport.id}`);
         if (dtlsState === 'closed') {
           transport.close();
         }
       });
       transport.on('close', () => {
-        console.log(`transport.on 'close' | transport.id ${transport.id}`);
+        log1stage(`transport.on 'close' | transport.id ${transport.id}`);
       });
       resolve(transport);
     } catch (error) {
-      //console.log(error);
+      console.error(error);
       //callback({ params: { error: error } });
       reject(error);
     }
