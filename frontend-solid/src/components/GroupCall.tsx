@@ -320,7 +320,7 @@ const GroupCall = (params: {
       <button onClick={() => {
         console.log(consumerTransports());
       }}>log consumer transports</button>
-      <div><video ref={localVideoRef} autoplay class="video" /></div>
+      <div><video ref={localVideoRef} autoplay muted class="video" /></div>
       <Show
         fallback={<div>No room specified</div>}
         when={params.roomName}
