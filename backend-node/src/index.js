@@ -71,6 +71,11 @@ let transports = [];
 let producers = [];
 let consumers = [];
 
+const intervalId = setInterval(() => {
+  console.log("====\n====\n====");
+  console.log(rooms);
+}, 5000);
+
 const connections = io.of('/mediasoup');
 
 const str = (o) => JSON.stringify(o);
@@ -122,6 +127,9 @@ connections.on('connection', async (socket) => {
     rooms[roomName].peers = rooms[roomName].peers.filter(
       socketId => socketId !== socket.id,
     );
+    if (rooms[roomName].peers.length === 0) {
+      delete rooms[roomName];
+    }
   });
 
   socket.on('joinRoom', async (data, callback) => {
