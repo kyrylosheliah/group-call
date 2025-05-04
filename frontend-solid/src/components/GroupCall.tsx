@@ -4,12 +4,16 @@ import io, { Socket } from 'socket.io-client';
 import * as mediasoupClient from 'mediasoup-client';
 import { Device } from "mediasoup-client";
 import { ProducerOptions } from "mediasoup-client/types";
+import { whitelistLogTags } from "~/utils/logging";
 
 const GroupCall = (params: {
   roomName: string;
 }) => {
   let localVideoRef: HTMLVideoElement | undefined;
   let socket: Socket = undefined!;
+
+  const logging = whitelistLogTags(["stage1"]);
+  const log1stage = logging.createTaggedLogger("stage1");
 
   let device: Device;
   let rtpCapabilities: any;
@@ -44,27 +48,27 @@ const GroupCall = (params: {
       socketId: any,
       existsProducer: any,
     }) => {
-      console.log("socket.on 'success' :", data);
+      log1stage("socket.on 'success' :", data);
       getLocalStream();
     });
 
     socket.on('new-producer', (data: {
       producerId: any
     }) => {
-      console.log("socket.on 'new-producer' :", data);
+      log1stage("socket.on 'new-producer' :", data);
       signalNewConsumerTransport(data.producerId);
     });
 
     socket.on('producer-closed', (data: {
       remoteProducerId: any
     }) => {
-      console.log("socket.on 'producer-closed' :", data);
+      log1stage("socket.on 'producer-closed' :", data);
       // server notification is received when a producer is closed
       // close the client-sze consumer and associated transport
       const producerToClose = consumerTransports().find(
         ct => ct.producerId === data.remoteProducerId
       );
-      producerToClose.consumerTranport.close();
+      producerToClose.consumerTransport.close();
       producerToClose.consumer.close();
       // remove consumer transport from the list
       setConsumerTransports(cts =>
@@ -86,7 +90,7 @@ const GroupCall = (params: {
   };
 
   const streamSuccess = async (stream: MediaStream) => {
-    console.log(`streamSuccess() :`, stream);
+    log1stage(`streamSuccess() :`, stream);
     localVideoRef!.srcObject = stream;
     audioParams.track = stream.getAudioTracks()[0];
     videoParams.track = stream.getVideoTracks()[0];
@@ -95,7 +99,7 @@ const GroupCall = (params: {
 
   const joinRoom = () => {
     socket.emit('joinRoom', { roomName: params.roomName }, (data: any) => {
-      console.log("socket.emit 'joinRoom' =>", data);
+      log1stage("socket.emit 'joinRoom' =>", data);
       rtpCapabilities = data.rtpCapabilities;
       createDevice();
     });
@@ -107,7 +111,7 @@ const GroupCall = (params: {
       await device.load({
         routerRtpCapabilities: rtpCapabilities,
       });
-      console.log("createDevice() +", device);
+      log1stage("createDevice() +", device);
       // once the device loads, create transport
       createSendTransport();
     } catch (error: any) {
@@ -122,7 +126,7 @@ const GroupCall = (params: {
     socket.emit('createWebRtcTransport', { consumer: false }, (data: {
       params: any
     }) => {
-      console.log("socket.emit 'createWebRtcTransport' =>", data);
+      log1stage("socket.emit 'createWebRtcTransport' =>", data);
 
       if (data.params.error) {
         console.log("[!error] socket.emit 'createWebRtcTransport' ... data.params.error");
@@ -138,7 +142,7 @@ const GroupCall = (params: {
         callback: any,
         errback: any,
       ) => {
-        console.log("producerTransport.on 'connect' :", data);
+        log1stage("producerTransport.on 'connect' :", data);
         try {
           // signal local DTLS prameters to the server side transport
           socket.emit('transport-connect', data);// { dtlsParameters });
@@ -154,7 +158,7 @@ const GroupCall = (params: {
         callback: any,
         errback: any,
       ) => {
-        console.log("producerTransport.on 'produce' :", data);
+        log1stage("producerTransport.on 'produce' :", data);
         try {
           // thell the server to create a Producer with the following
           // parameters and produce and expect back a server side producer id
@@ -166,7 +170,7 @@ const GroupCall = (params: {
               appData: data.appData,
             },
             (data: { id: any, producersExist: any }) => {
-              console.log("socket.emit 'transport-produce' =>", data);
+              log1stage("socket.emit 'transport-produce' =>", data);
               callback({ id: data.id });
               if (data.producersExist) {
                 getProducers();
@@ -189,41 +193,41 @@ const GroupCall = (params: {
     audioProducer = await producerTransport.produce(audioParams);
     videoProducer = await producerTransport.produce(videoParams);
 
-    console.log("connectSendTransport() +", audioProducer, videoProducer);
+    log1stage("connectSendTransport() +", audioProducer, videoProducer);
 
     audioProducer.on('trackended', () => {
-      console.log("audioProducer.on 'trackended'");
+      log1stage("audioProducer.on 'trackended'");
       // TODO: close the track
     });
     audioProducer.on('transportclose', () => {
-      console.log("audioProducer.on 'transportclose'");
+      log1stage("audioProducer.on 'transportclose'");
       // TODO: close the transport
     });
 
     videoProducer.on('trackended', () => {
-      console.log("videoProducer.on 'trackended'");
+      log1stage("videoProducer.on 'trackended'");
       // TODO: close the track
     });
     videoProducer.on('transportclose', () => {
-      console.log("videoProducer.on 'transportclose'");
+      log1stage("videoProducer.on 'transportclose'");
       // TODO: close the transport
     });
   };
 
   const getProducers = () => {
     socket.emit('getProducers', (producerIds: any) => {
-      console.log("consumerTransport.emit 'getProducers' =>", producerIds);
+      log1stage("consumerTransport.emit 'getProducers' =>", producerIds);
       producerIds.forEach(signalNewConsumerTransport);
     });
   };
 
   const signalNewConsumerTransport = async (remoteProducerId: any) => {
-    console.log("signalNewConsumerTransport() :", remoteProducerId);
+    log1stage("signalNewConsumerTransport() :", remoteProducerId);
     if (consumingTransports.includes(remoteProducerId)) return;
     consumingTransports.push(remoteProducerId);
 
     socket.emit('createWebRtcTransport', { consumer: true }, (data: { params: any }) => {
-      console.log("socket.emit 'createWebRtcTransport' =>", data);
+      log1stage("socket.emit 'createWebRtcTransport' =>", data);
 
       // server sends back params needed to create Send Transport on client side
       if (data.params.error) {
@@ -246,7 +250,7 @@ const GroupCall = (params: {
         callback: any,
         errback: any,
       ) => {
-        console.log("consumerTransport.on 'connect' :", data);
+        log1stage("consumerTransport.on 'connect' :", data);
         try {
           // signal local DTLS parameters to the server side transport
           socket.emit('transport-recv-connect', {
@@ -269,7 +273,7 @@ const GroupCall = (params: {
     remoteProducerId: any,
     serverConsumerTransportId: any,
   ) => {
-    console.log("connectRecvTransport() :", consumerTransport, remoteProducerId, serverConsumerTransportId);
+    log1stage("connectRecvTransport() :", consumerTransport, remoteProducerId, serverConsumerTransportId);
     socket.emit(
       'consume',
       { 
@@ -278,7 +282,7 @@ const GroupCall = (params: {
         serverConsumerTransportId,
       },
       async (data: { params: any }) => {
-        console.log("socket.emit 'consume' :", data);
+        log1stage("socket.emit 'consume' :", data);
 
         if (data.params.error) {
           console.log('Cannot consume');
@@ -328,12 +332,12 @@ const GroupCall = (params: {
           <For each={consumerTransports()}>{(ct, index) => {
             if (ct.consumer.kind === "video") {
               return <video autoplay class="video" ref={(videoRef) => {
-                console.log("rendering consumer source index", index);
+                log1stage("rendering consumer source index", index);
                 videoRef.srcObject = new MediaStream([ct.consumer.track]);
               }}/>;
             } else if (ct.consumer.kind === "audio") {
               return <audio autoplay ref={(audioRef) => {
-                console.log("rendering consumer source index", index);
+                log1stage("rendering consumer source index", index);
                 audioRef.srcObject = new MediaStream([ct.consumer.track]);
               }}/>;
             }

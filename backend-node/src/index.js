@@ -5,10 +5,10 @@ import { Server } from 'socket.io';
 import os from 'os';
 import mediasoup from 'mediasoup';
 import config from './config.js';
-import { whitelistLogTags } from './logger.js';
+import { whitelistLogTags } from './logging.js';
 
 //const logging = whitelistLogTags(["stage1", "stage2"]);
-const logging = whitelistLogTags(["stage2"]);
+const logging = whitelistLogTags(["stage1"]);
 const log1stage = logging.createTaggedLogger("stage1");
 const log2stage = logging.createTaggedLogger("stage2");
 
@@ -106,6 +106,7 @@ connections.on('connection', async (socket) => {
   const removeItems = (items, socketId, type) => {
     items.forEach(item => {
       if (item.socketId === socket.id) {
+        log2stage(`closing ${str(item)}`);
         item[type].close();
       }
     });
@@ -115,8 +116,12 @@ connections.on('connection', async (socket) => {
 
   socket.on('disconnect', () => {
     log1stage(`[${socket.id}] socket.on 'disconnect'`);
+    log2stage(`[${socket.id}] socket.on 'disconnect'`);
+    log2stage(`removing consumers ...`);
     consumers = removeItems(consumers, socket.id, 'consumer');
+    log2stage(`removing producers ...`);
     producers = removeItems(producers, socket.id, 'producer');
+    log2stage(`removing transports ...`);
     transports = removeItems(transports, socket.id, 'transport');
     if (!peers[socket.id]) {
       log1stage(`[${socket.id}] socket.on 'disconnect' ... peers[socket.id] is undefined`);
