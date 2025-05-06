@@ -144,9 +144,9 @@ connections.on('connection', async (socket) => {
     peers[socket.id] = {
       socket,
       roomName,
-      transports: [],
-      producers: [],
-      consumers: [],
+      //transports: [],
+      //producers: [],
+      //consumers: [],
       peerDetails: {
         name: '',
         isAdmin: false,
@@ -218,17 +218,17 @@ connections.on('connection', async (socket) => {
 
   const addTransport = (transport, roomName, consumer) => {
     transports.push({ socketId: socket.id, transport, roomName, consumer });
-    peers[socket.id].transports.push(transport.id);
+    //peers[socket.id].transports.push(transport.id);
   };
 
   const addProducer = (producer, roomName) => {
     producers.push({ socketId: socket.id, producer, roomName });
-    peers[socket.id].producers.push(producer.id);
+    //peers[socket.id].producers.push(producer.id);
   };
 
   const addConsumer = (consumer, roomName) => {
     consumers.push({ socketId: socket.id, consumer, roomName });
-    peers[socket.id].consumers.push(consumer.id);
+    //peers[socket.id].consumers.push(consumer.id);
   };
 
   socket.on('getProducers', (callback) => {
