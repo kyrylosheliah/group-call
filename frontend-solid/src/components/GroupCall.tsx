@@ -21,7 +21,8 @@ const GroupCall = (params: {
   let [consumerTransports, setConsumerTransports] = createSignal<any[]>([]);
   let audioProducer: any;
   let videoProducer: any;
-  //let consumer: any;
+
+  let consumingTransports: any[] = [];
 
   let audioParams: any = {};
   let videoParams: { params: ProducerOptions, track: MediaStreamTrack } = {
@@ -37,11 +38,19 @@ const GroupCall = (params: {
     },
     track: undefined!,
   };
-  let consumingTransports: any[] = [];
   
   onMount(() => {
     socket = io(`https://${window.location.hostname}:3000/mediasoup`, {
       transports: ['websocket'],
+    });
+
+    socket.on('disconnect', () => {
+      console.error("disconnect");
+      //device = undefined!;
+      //producerTransport = undefined!;
+      setConsumerTransports([]);
+      //audioProducer = undefined!;
+      //videoProducer = undefined!;
     });
 
     socket.on('connection-success', (data: {
@@ -65,16 +74,28 @@ const GroupCall = (params: {
       log1stage("socket.on 'producer-closed' :", data);
       // server notification is received when a producer is closed
       // close the client-sze consumer and associated transport
+      console.log(`self producer id ${producerTransport.id}`);
+      console.log(`looking to delete producer id ${data.remoteProducerId}`);
+      // TODO: producerToClose is undefined
       const producerToClose = consumerTransports().find(
         ct => ct.producerId === data.remoteProducerId
       );
-      producerToClose.consumerTransport.close();
-      producerToClose.consumer.close();
+      if (producerToClose !== undefined) {
+        producerToClose.consumerTransport.close();
+        producerToClose.consumer.close();
+      }
       // remove consumer transport from the list
       setConsumerTransports(cts =>
         cts.filter(ct => ct.producerId !== data.remoteProducerId)
       );
     });
+  });
+
+  onCleanup(() => {
+    if (socket !== undefined) {
+      try { socket.disconnect(); }
+      catch(error) {}
+    }
   });
 
   const getLocalStream = () => {
@@ -145,7 +166,7 @@ const GroupCall = (params: {
         log1stage("producerTransport.on 'connect' :", data);
         try {
           // signal local DTLS prameters to the server side transport
-          socket.emit('transport-connect', data);// { dtlsParameters });
+          socket.emit('transport-connect', { dtlsParameters: data.dtlsParameters });
           // tell the transport that parameters were transmitted
           callback();
         } catch (error: any) {
@@ -197,20 +218,16 @@ const GroupCall = (params: {
 
     audioProducer.on('trackended', () => {
       log1stage("audioProducer.on 'trackended'");
-      // TODO: close the track
     });
     audioProducer.on('transportclose', () => {
       log1stage("audioProducer.on 'transportclose'");
-      // TODO: close the transport
     });
 
     videoProducer.on('trackended', () => {
       log1stage("videoProducer.on 'trackended'");
-      // TODO: close the track
     });
     videoProducer.on('transportclose', () => {
       log1stage("videoProducer.on 'transportclose'");
-      // TODO: close the transport
     });
   };
 
@@ -223,6 +240,7 @@ const GroupCall = (params: {
 
   const signalNewConsumerTransport = async (remoteProducerId: any) => {
     log1stage("signalNewConsumerTransport() :", remoteProducerId);
+    //if (consumerTransports().some((e) => e.producerId === remoteProducerId)) return;
     if (consumingTransports.includes(remoteProducerId)) return;
     consumingTransports.push(remoteProducerId);
 
@@ -318,8 +336,14 @@ const GroupCall = (params: {
     <div>
       <div>Room "{params.roomName}"</div>
       <button onClick={() => {
-        console.log(consumerTransports());
-      }}>log consumer transports</button>
+        console.log("socket.id", socket.id);
+        console.log("device", device);
+        console.log("rtpCapabilities", rtpCapabilities);
+        console.log("producerTransport", producerTransport);
+        console.log("consumerTransports()", consumerTransports());
+        console.log("audioProducer", audioProducer);
+        console.log("videoProducer", videoProducer);
+      }}>log state</button>
       <div><video ref={localVideoRef} autoplay muted class="video" /></div>
       <Show
         fallback={<div>No room specified</div>}

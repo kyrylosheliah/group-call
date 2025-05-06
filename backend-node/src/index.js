@@ -8,7 +8,7 @@ import config from './config.js';
 import { whitelistLogTags } from './logging.js';
 
 //const logging = whitelistLogTags(["stage1", "stage2"]);
-const logging = whitelistLogTags(["stage1"]);
+const logging = whitelistLogTags(["stage2"]);
 const log1stage = logging.createTaggedLogger("stage1");
 const log2stage = logging.createTaggedLogger("stage2");
 
@@ -72,8 +72,19 @@ let producers = [];
 let consumers = [];
 
 const intervalId = setInterval(() => {
-  console.log("====\n====\n====");
-  console.log(rooms);
+  log2stage("====\n====\n====");
+  log2stage(`- transports`);
+  for (const t of transports) {
+    log2stage(`socket ${t.socketId} transport ${t.transport.id}`);
+  }
+  log2stage(`- producers`);
+  for (const p of producers) {p
+    log2stage(`socket ${p.socketId} producer ${p.producer.id}`);
+  }
+  log2stage(`- consumers`);
+  for (const c of consumers) {
+    log2stage(`socket ${c.socketId} consumer ${c.consumer.id}`);
+  }
 }, 5000);
 
 const connections = io.of('/mediasoup');
@@ -97,7 +108,7 @@ const createWorker = async () => {
 worker = createWorker();
 
 connections.on('connection', async (socket) => {
-  log1stage(`[${socket.id}] connections.on 'connection'`);
+  log1stage(`${socket.id} connections.on 'connection'`);
 
   socket.emit('connection-success', {
     socketId: socket.id,
@@ -105,26 +116,25 @@ connections.on('connection', async (socket) => {
 
   const removeItems = (items, socketId, type) => {
     items.forEach(item => {
-      if (item.socketId === socket.id) {
+      if (item.socketId === socketId) {
         log2stage(`closing ${str(item)}`);
         item[type].close();
       }
     });
-    items = items.filter(item => item.socketId !== socket.id);
+    items = items.filter(item => item.socketId !== socketId);
     return items;
   };
 
   socket.on('disconnect', () => {
-    log1stage(`[${socket.id}] socket.on 'disconnect'`);
-    log2stage(`[${socket.id}] socket.on 'disconnect'`);
-    log2stage(`removing consumers ...`);
+    log1stage(`${socket.id} socket.on 'disconnect'`);
+    log2stage(`${socket.id} removing consumers ...`);
     consumers = removeItems(consumers, socket.id, 'consumer');
-    log2stage(`removing producers ...`);
+    log2stage(`${socket.id} removing producers ...`);
     producers = removeItems(producers, socket.id, 'producer');
-    log2stage(`removing transports ...`);
+    log2stage(`${socket.id} removing transports ...`);
     transports = removeItems(transports, socket.id, 'transport');
     if (!peers[socket.id]) {
-      log1stage(`[${socket.id}] socket.on 'disconnect' ... peers[socket.id] is undefined`);
+      log1stage(`${socket.id} socket.on 'disconnect' ... peers[socket.id] is undefined`);
       return;
     }
     const { roomName } = peers[socket.id];
@@ -138,7 +148,7 @@ connections.on('connection', async (socket) => {
   });
 
   socket.on('joinRoom', async (data, callback) => {
-    log1stage(`[${socket.id}] socket.on 'joinRoom' | ${str(data)}`);
+    log1stage(`${socket.id} socket.on 'joinRoom' | ${str(data)}`);
     const { roomName } = data;
     const router = await createRoom(roomName, socket.id);
     peers[socket.id] = {
@@ -199,7 +209,7 @@ connections.on('connection', async (socket) => {
   // })
 
   socket.on('createWebRtcTransport', async (data, callback) => {
-    log1stage(`[${socket.id}] socket.on 'createWebRtcTransport' | ${str(data)}`);
+    log1stage(`${socket.id} socket.on 'createWebRtcTransport' | ${str(data)}`);
     const { consumer } = data;
     const roomName = peers[socket.id].roomName;
     const router = rooms[roomName].router;
@@ -232,7 +242,8 @@ connections.on('connection', async (socket) => {
   };
 
   socket.on('getProducers', (callback) => {
-    log1stage(`[${socket.id}] socket.on 'getProducers'`);
+    // TODO: Error: connect() already called [method:webRtcTransport.connect]
+    log1stage(`${socket.id} socket.on 'getProducers'`);
     // return all producer transports
     const { roomName } = peers[socket.id];
     let producerList = [];
@@ -244,38 +255,41 @@ connections.on('connection', async (socket) => {
     callback(producerList);
   });
 
-  const informConsumers = (roomName, socketId, id) => {
-    log1stage(`[${socketId}] informConsumers() | id ${id} joined ${roomName}`);
+  const informConsumers = (roomName, socketId, producerId) => {
+    log1stage(`[${socketId}] informConsumers() | producerId ${producerId} joined ${roomName}`);
+    console.log(`===`);
     producers.forEach(p => {
       if (p.socketId !== socketId && p.roomName === roomName) {
+        log2stage(`[+] ${p.socketId} ${socketId}`);
         const producerSocket = peers[p.socketId].socket;
-        producerSocket.emit('new-producer', { producerId: id });
+        producerSocket.emit('new-producer', { producerId });
+      } else {
+        log2stage(`[ ] ${p.socketId} ${socketId}`);
       }
     });
   };
 
   const getTransport = (socketId) => {
-    const [producerTransport] = transports.filter(t =>
-      t.socketId === socketId && !t.consumer
-    );
-    return producerTransport.transport;
+    return transports.find(
+      t => t.socketId === socketId && !t.consumer
+    ).transport;
   }
 
   socket.on('transport-connect', (data) => {
-    log1stage(`[${socket.id}] socket.on 'transport-connect' | ${str(data)}`);
+    log1stage(`${socket.id} socket.on 'transport-connect' | ${str(data)}`);
     const { dtlsParameters } = data;
     getTransport(socket.id).connect({ dtlsParameters });
   });
 
   socket.on('transport-produce', async (data, callback) => {
-    log1stage(`[${socket.id}] socket.on 'transport-produce' | ${str(data)}`);
+    log1stage(`${socket.id} socket.on 'transport-produce' | ${str(data)}`);
     const { kind, rtpParameters, appData } = data;
     const producer = await getTransport(socket.id).produce({ kind, rtpParameters });
     const { roomName } = peers[socket.id];
     addProducer(producer, roomName);
     informConsumers(roomName, socket.id, producer.id);
     producer.on('transportclose', () => {
-      log1stage(`[${socket.id}] producer.on 'transportclose'`);
+      log1stage(`${socket.id} producer.on 'transportclose'`);
       producer.close();
     });
     // send the producer's id back to the client
@@ -286,7 +300,7 @@ connections.on('connection', async (socket) => {
   });
 
   socket.on('transport-recv-connect', async (data) => {
-    log1stage(`[${socket.id}] socket.on 'transport-recv-connect' | ${str(data)}`);
+    log1stage(`${socket.id} socket.on 'transport-recv-connect' | ${str(data)}`);
     const {
       dtlsParameters,
       serverConsumerTransportId,
@@ -298,7 +312,7 @@ connections.on('connection', async (socket) => {
   });
 
   socket.on('consume', async (data, callback) => {
-    log1stage(`[${socket.id}] socket.on 'consume' | ${str(data)}`);
+    log1stage(`${socket.id} socket.on 'consume' | ${str(data)}`);
     const {
       rtpCapabilities,
       remoteProducerId,
@@ -320,11 +334,11 @@ connections.on('connection', async (socket) => {
           paused: true,
         });
         consumer.on('transportclose', () => {
-          log1stage(`[${socket.id}] consumer.on 'transportclose'`);
+          log1stage(`${socket.id} consumer.on 'transportclose'`);
           log1stage('transport close from consumer');
         })
         consumer.on('producerclose', () => {
-          log1stage(`[${socket.id}] consumer.on 'producerclose'`);
+          log1stage(`${socket.id} consumer.on 'producerclose'`);
           socket.emit('producer-closed', { remoteProducerId });
           consumerTransport.close([]);
           transports = transports.filter(t => t.transport.id !== consumerTransport.id);
@@ -347,7 +361,7 @@ connections.on('connection', async (socket) => {
     }
   });
   socket.on('consumer-resume', async (data) => {
-    log1stage(`[${socket.id}] socket.on 'consumer-resume' | ${str(data)}`);
+    log1stage(`${socket.id} socket.on 'consumer-resume' | ${str(data)}`);
     const { serverConsumerId } = data;
     const { consumer } = consumers.find(c => c.consumer.id === serverConsumerId);
     await consumer.resume();

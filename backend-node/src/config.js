@@ -13,8 +13,8 @@ export default {
   mediasoup: {
     numWorkers: Object.keys(os.cpus()).length,
     workerSettings: {
-      //dtlsCertificateFile: process.env.WORKER_CERT_FULLCHAIN,
-      //dtlsPrivateKeyFile: process.env.WORKER_CERT_PRIVKEY,
+      dtlsCertificateFile: `${process.cwd()}/../.ssl/cert.pem`,
+      dtlsPrivateKeyFile: `${process.cwd()}/../.ssl/key.pem`,
       logLevel: "debug",
       logTags: [
         "info",

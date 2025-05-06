@@ -1,8 +1,14 @@
 export const whitelistLogTags = (whitelist) => ({
   whitelist: whitelist,
-  createTaggedLogger: (tag) => (
-    whitelist.includes(tag)
-      ? (message) => { console.log(message); }
-      : (_) => {}
-  ),
+  createTaggedLogger: (tag) => {
+    if (
+      Array.isArray(tag)
+        ? tag.some((tagElement) => whitelist.includes(tagElement))
+        : whitelist.includes(tag)
+    ) {
+      return ((message) => { console.log(message); });
+    } else {
+      return ((_) => {});
+    }
+  },
 });
