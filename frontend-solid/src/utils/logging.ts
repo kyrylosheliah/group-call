@@ -1,4 +1,4 @@
-export const whitelistLogTags = (whitelist: string[]) => ({
+const whitelistLogTags = (whitelist: string[]) => ({
   whitelist: whitelist,
   createTaggedLogger: (tag: string) => (
     whitelist.includes(tag)
@@ -6,3 +6,7 @@ export const whitelistLogTags = (whitelist: string[]) => ({
       : (..._: any) => {}
   ),
 });
+
+const logging = whitelistLogTags(["stage1"]);
+
+export const log1stage = logging.createTaggedLogger("stage1");

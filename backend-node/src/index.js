@@ -8,7 +8,7 @@ import config from './config.js';
 import { whitelistLogTags } from './logging.js';
 
 //const logging = whitelistLogTags(["stage1", "stage2"]);
-const logging = whitelistLogTags(["stage2"]);
+const logging = whitelistLogTags([]);
 const log1stage = logging.createTaggedLogger("stage1");
 const log2stage = logging.createTaggedLogger("stage2");
 
@@ -71,21 +71,21 @@ let transports = [];
 let producers = [];
 let consumers = [];
 
-const intervalId = setInterval(() => {
-  log2stage("====\n====\n====");
-  log2stage(`- transports`);
-  for (const t of transports) {
-    log2stage(`socket ${t.socketId} transport ${t.transport.id}`);
-  }
-  log2stage(`- producers`);
-  for (const p of producers) {p
-    log2stage(`socket ${p.socketId} producer ${p.producer.id}`);
-  }
-  log2stage(`- consumers`);
-  for (const c of consumers) {
-    log2stage(`socket ${c.socketId} consumer ${c.consumer.id}`);
-  }
-}, 5000);
+//const intervalId = setInterval(() => {
+//  log2stage("====\n====\n====");
+//  log2stage(`- transports`);
+//  for (const t of transports) {
+//    log2stage(`socket ${t.socketId} transport ${t.transport.id}`);
+//  }
+//  log2stage(`- producers`);
+//  for (const p of producers) {p
+//    log2stage(`socket ${p.socketId} producer ${p.producer.id}`);
+//  }
+//  log2stage(`- consumers`);
+//  for (const c of consumers) {
+//    log2stage(`socket ${c.socketId} consumer ${c.consumer.id}`);
+//  }
+//}, 5000);
 
 const connections = io.of('/mediasoup');
 
