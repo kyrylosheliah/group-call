@@ -5,12 +5,7 @@ import { Server } from 'socket.io';
 import os from 'os';
 import mediasoup from 'mediasoup';
 import config from './config.js';
-import { whitelistLogTags } from './logging.js';
-
-//const logging = whitelistLogTags(["stage1", "stage2"]);
-const logging = whitelistLogTags([]);
-const log1stage = logging.createTaggedLogger("stage1");
-const log2stage = logging.createTaggedLogger("stage2");
+import { log1stage, log2stage } from './logging.js';
 
 const getIpAddresses = () => {
   var addresses = [];
@@ -214,12 +209,12 @@ connections.on('connection', async (socket) => {
     const roomName = peers[socket.id].roomName;
     const router = rooms[roomName].router;
     createWebRtcTransport(router).then((transport) => {
-      callback({params: {
+      callback({
         id: transport.id,
         iceParameters: transport.iceParameters,
         iceCandidates: transport.iceCandidates,
         dtlsParameters: transport.dtlsParameters,
-      }});
+      });
       addTransport(transport, roomName, consumer);
     }).catch((error) => {
       console.error(error);
@@ -243,6 +238,10 @@ connections.on('connection', async (socket) => {
 
   socket.on('getProducers', (callback) => {
     // TODO: Error: connect() already called [method:webRtcTransport.connect]
+    // recreate by:
+    // - restart the server for the first time while the client is up
+    // - let the client prompt you to focus window
+    // - restart the server the second time
     log1stage(`${socket.id} socket.on 'getProducers'`);
     // return all producer transports
     const { roomName } = peers[socket.id];
@@ -257,7 +256,7 @@ connections.on('connection', async (socket) => {
 
   const informConsumers = (roomName, socketId, producerId) => {
     log1stage(`[${socketId}] informConsumers() | producerId ${producerId} joined ${roomName}`);
-    console.log(`===`);
+    log2stage(`===`);
     producers.forEach(p => {
       if (p.socketId !== socketId && p.roomName === roomName) {
         log2stage(`[+] ${p.socketId} ${socketId}`);
@@ -346,18 +345,17 @@ connections.on('connection', async (socket) => {
           consumers = consumers.filter(c => c.consumer.id !== consumer.id);
         });
         addConsumer(consumer, roomName);
-        const params = {
+        callback({
           id: consumer.id,
           producerId: remoteProducerId,
           kind: consumer.kind,
           rtpParameters: consumer.rtpParameters,
           serverConsumerId: consumer.id,
-        };
-        callback({ params });
+        });
       }
     } catch (error) {
       console.error(error.message);
-      callback({ params: { error: error } });
+      callback({ error: error });
     }
   });
   socket.on('consumer-resume', async (data) => {

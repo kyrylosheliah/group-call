@@ -3,8 +3,38 @@ import { createSignal, onCleanup, onMount } from "solid-js";
 import io, { Socket } from 'socket.io-client';
 import * as mediasoupClient from 'mediasoup-client';
 import { Device } from "mediasoup-client";
-import { ProducerOptions } from "mediasoup-client/types";
-import { log1stage } from "~/utils/logging";
+import { AppData, Consumer, DtlsParameters, MediaKind, Producer, ProducerOptions, RtpCapabilities, RtpParameters, Transport, TransportOptions } from "mediasoup-client/types";
+import { log1stage, log2stage } from "~/utils/logging";
+
+interface IConsumerTransport {
+  consumerTransport: Transport<AppData>;
+  serverConsumerTransportId: string;
+  producerId: string;
+  consumer: Consumer<AppData>;
+}
+
+interface IAudioParams {
+  track: MediaStreamTrack;
+}
+
+interface IVideoParams {
+  params: ProducerOptions;
+  track: MediaStreamTrack;
+}
+
+interface ITransportProduceResponse {
+  id: number;
+  producersExist: boolean;
+}
+
+interface ISocketConsumeResponse {
+  id: string,
+  producerId: string;
+  kind: MediaKind;
+  rtpParameters: RtpParameters;
+  serverConsumerId: string;
+  error: any;
+}
 
 export const joinGroupCall = (params: {
   roomName: string;
@@ -12,17 +42,20 @@ export const joinGroupCall = (params: {
   let socket: Socket = undefined!;
 
   let device: Device;
-  let rtpCapabilities: any;
-  let producerTransport: mediasoupClient.types.Transport<mediasoupClient.types.AppData>;
-  const [consumerTransports, setConsumerTransports] = createSignal<any[]>([]);
+  let rtpCapabilities: RtpCapabilities;
+  let producerTransport: Transport<AppData>;
+  const [consumerTransports, setConsumerTransports] = createSignal<Array<IConsumerTransport>>([]);
   const [localMediaStream, setLocalMediaStream] = createSignal<MediaStream>(undefined!);
-  let audioProducer: any;
-  let videoProducer: any;
+  let audioProducer: Producer<AppData>;
+  let videoProducer: Producer<AppData>;
 
-  let consumingTransports: any[] = [];
+  let consumingTransports: Array<string> = [];
 
-  let audioParams: any = {};
-  let videoParams: { params: ProducerOptions, track: MediaStreamTrack } = {
+  let audioParams: IAudioParams = {
+    track: undefined!,
+  };
+  let videoParams: IVideoParams = {
+    track: undefined!,
     params: {
       encodings: [
         { rid: 'r0', maxBitrate: 100000, scalabilityMode: 'S1T3' },
@@ -33,7 +66,6 @@ export const joinGroupCall = (params: {
         videoGoogleStartBitrate: 1000,
       },
     },
-    track: undefined!,
   };
   
   onMount(() => {
@@ -51,40 +83,25 @@ export const joinGroupCall = (params: {
     });
 
     socket.on('connection-success', (data: {
-      socketId: any,
-      existsProducer: any,
+      socketId: number,
+      existsProducer: boolean,
     }) => {
       log1stage("socket.on 'success' :", data);
       getLocalStream();
     });
 
     socket.on('new-producer', (data: {
-      producerId: any
+      producerId: string
     }) => {
       log1stage("socket.on 'new-producer' :", data);
       signalNewConsumerTransport(data.producerId);
     });
 
     socket.on('producer-closed', (data: {
-      remoteProducerId: any
+      remoteProducerId: string
     }) => {
       log1stage("socket.on 'producer-closed' :", data);
-      // server notification is received when a producer is closed
-      // close the client-sze consumer and associated transport
-      console.log(`self producer id ${producerTransport.id}`);
-      console.log(`looking to delete producer id ${data.remoteProducerId}`);
-      // TODO: producerToClose is undefined
-      const producerToClose = consumerTransports().find(
-        ct => ct.producerId === data.remoteProducerId
-      );
-      if (producerToClose !== undefined) {
-        producerToClose.consumerTransport.close();
-        producerToClose.consumer.close();
-      }
-      // remove consumer transport from the list
-      setConsumerTransports(cts =>
-        cts.filter(ct => ct.producerId !== data.remoteProducerId)
-      );
+      closeConsumerTransport(data.remoteProducerId);
     });
   });
 
@@ -117,7 +134,9 @@ export const joinGroupCall = (params: {
   };
 
   const joinRoom = () => {
-    socket.emit('joinRoom', { roomName: params.roomName }, (data: any) => {
+    socket.emit('joinRoom', { roomName: params.roomName }, (data: {
+      rtpCapabilities: RtpCapabilities;
+    }) => {
       log1stage("socket.emit 'joinRoom' =>", data);
       rtpCapabilities = data.rtpCapabilities;
       createDevice();
@@ -142,24 +161,25 @@ export const joinGroupCall = (params: {
   }
 
   const createSendTransport = () => {
-    socket.emit('createWebRtcTransport', { consumer: false }, (data: {
-      params: any
-    }) => {
+    socket.emit('createWebRtcTransport', { consumer: false }, (
+      data: TransportOptions
+    ) => {
       log1stage("socket.emit 'createWebRtcTransport' =>", data);
 
-      if (data.params.error) {
-        console.log("[!error] socket.emit 'createWebRtcTransport' ... data.params.error");
-        return;
-      }
+      // TODO: check TransportOptions alternative return type documentation
+      //if (data.params.error) {
+      //  console.log("[!error] socket.emit 'createWebRtcTransport' ... data.params.error");
+      //  return;
+      //}
 
       // create a new WebRTC Transport based on the server's producer transport params
-      producerTransport = device.createSendTransport(data.params);
+      producerTransport = device.createSendTransport(data);
 
       // when a first call to transport.produce() is made
       producerTransport.on('connect', async (
-        data: { dtlsParameters: any },
-        callback: any,
-        errback: any,
+        data: { dtlsParameters: DtlsParameters },
+        callback: Function,
+        errback: Function,
       ) => {
         log1stage("producerTransport.on 'connect' :", data);
         try {
@@ -173,9 +193,13 @@ export const joinGroupCall = (params: {
       });
 
       producerTransport.on('produce', async (
-        data: any,
-        callback: any,
-        errback: any,
+        data:  {
+          kind: MediaKind;
+          rtpParameters: RtpParameters;
+          appData: AppData;
+        },
+        callback: Function,
+        errback: Function,
       ) => {
         log1stage("producerTransport.on 'produce' :", data);
         try {
@@ -188,7 +212,7 @@ export const joinGroupCall = (params: {
               rtpParameters: data.rtpParameters,
               appData: data.appData,
             },
-            (data: { id: any, producersExist: any }) => {
+            (data: ITransportProduceResponse) => {
               log1stage("socket.emit 'transport-produce' =>", data);
               callback({ id: data.id });
               if (data.producersExist) {
@@ -206,8 +230,9 @@ export const joinGroupCall = (params: {
   };
 
   const connectSendTransport = async () => {
-    //console.log("connectSendTransport() :", audioParams);
-    //console.log("connectSendTransport() :", videoParams);
+    log1stage("connectSendTransport() :", audioParams);
+    log1stage("connectSendTransport() :", videoParams);
+
     //trigger the 'connect' and 'produce' events
     audioProducer = await producerTransport.produce(audioParams);
     videoProducer = await producerTransport.produce(videoParams);
@@ -230,13 +255,13 @@ export const joinGroupCall = (params: {
   };
 
   const getProducers = () => {
-    socket.emit('getProducers', (producerIds: any) => {
+    socket.emit('getProducers', (producerIds: Array<string>) => {
       log1stage("consumerTransport.emit 'getProducers' =>", producerIds);
       producerIds.forEach(signalNewConsumerTransport);
     });
   };
 
-  const signalNewConsumerTransport = async (remoteProducerId: any) => {
+  const signalNewConsumerTransport = async (remoteProducerId: string) => {
     log1stage("signalNewConsumerTransport() :", remoteProducerId);
     // race condition here
     //if (consumerTransports().some((e) => e.producerId === remoteProducerId)) return;
@@ -244,36 +269,38 @@ export const joinGroupCall = (params: {
     if (consumingTransports.includes(remoteProducerId)) return;
     consumingTransports.push(remoteProducerId);
 
-    socket.emit('createWebRtcTransport', { consumer: true }, (data: { params: any }) => {
+    socket.emit('createWebRtcTransport', { consumer: true }, (
+      data: TransportOptions,
+    ) => {
       log1stage("socket.emit 'createWebRtcTransport' =>", data);
 
       // server sends back params needed to create Send Transport on client side
-      if (data.params.error) {
-        console.log(data.params.error);
-        return;
-      }
+      //if (data.error) {
+      //  console.log(data.params.error);
+      //  return;
+      //}
 
       // WebRTC Transport to receive media based on server's consumer transport params
       let consumerTransport;
       try {
-        consumerTransport = device.createRecvTransport(data.params);
-      } catch (error) {
+        consumerTransport = device.createRecvTransport(data);
+      } catch (error: any) {
         console.log(error);
         return;
       }
 
       // an event raised when the first call to transport.produce() is made
       consumerTransport.on('connect', async (
-        data2: { dtlsParameters: any },
-        callback: any,
-        errback: any,
+        data2: { dtlsParameters: DtlsParameters },
+        callback: Function,
+        errback: Function,
       ) => {
         log1stage("consumerTransport.on 'connect' :", data);
         try {
           // signal local DTLS parameters to the server side transport
           socket.emit('transport-recv-connect', {
             dtlsParameters: data2.dtlsParameters,
-            serverConsumerTransportId: data.params.id,
+            serverConsumerTransportId: data.id,
           });
           // tell the transport that parameters were transmitted
           callback();
@@ -282,14 +309,14 @@ export const joinGroupCall = (params: {
         }
       });
 
-      connectRecvTransport(consumerTransport, remoteProducerId, data.params.id);
+      connectRecvTransport(consumerTransport, remoteProducerId, data.id);
     });
   }
 
   const connectRecvTransport = async (
-    consumerTransport: any,
-    remoteProducerId: any,
-    serverConsumerTransportId: any,
+    consumerTransport: Transport<AppData>,
+    remoteProducerId: string,
+    serverConsumerTransportId: string,
   ) => {
     log1stage("connectRecvTransport() :", consumerTransport, remoteProducerId, serverConsumerTransportId);
     socket.emit(
@@ -299,27 +326,21 @@ export const joinGroupCall = (params: {
         remoteProducerId,
         serverConsumerTransportId,
       },
-      async (data: { params: any }) => {
+      async (data: ISocketConsumeResponse) => {
         log1stage("socket.emit 'consume' :", data);
 
-        if (data.params.error) {
+        if (data.error) {
           console.log('Cannot consume');
           return;
         }
 
-        const consumer = await consumerTransport.consume(data.params);
-        //consume({
-        //  id: data.params.id,
-        //  producerId: data.params.producerId,
-        //  kind: data.params.kind,
-        //  rtpParameters: data.params.rtpParameters,
-        //});
+        const consumer = await consumerTransport.consume(data);
 
         setConsumerTransports(cts => [
           ...cts,
           {
             consumerTransport,
-            serverConsumerTransportId: data.params.id,
+            serverConsumerTransportId: data.id,
             producerId: remoteProducerId,
             consumer,
           },
@@ -327,8 +348,26 @@ export const joinGroupCall = (params: {
 
         // the server consumer started with media paused so we need to inform
         // the server to resume
-        socket.emit('consumer-resume', { serverConsumerId: data.params.serverConsumerId });
+        socket.emit('consumer-resume', { serverConsumerId: data.serverConsumerId });
       },
+    );
+  };
+
+  const closeConsumerTransport = (remoteProducerId: string) => {
+    // server notification is received when a producer is closed
+    // close the client-side consumer and an associated transport
+    log2stage(`self producer id ${producerTransport.id}`);
+    log2stage(`looking to delete producer id ${remoteProducerId}`);
+    const producerToClose = consumerTransports().find(
+      ct => ct.producerId === remoteProducerId
+    );
+    if (producerToClose !== undefined) {
+      producerToClose.consumerTransport.close();
+      producerToClose.consumer.close();
+    }
+    // remove consumer transport from the list
+    setConsumerTransports(cts =>
+      cts.filter(ct => ct.producerId !== remoteProducerId)
     );
   };
 

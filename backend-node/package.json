@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "start": "node ./src/index.js",
-    "dev": "nodemon ./src/index.js"
+    "dev": "nodemon ./src/index.js --stack-trace-limit=50"
   },
   "dependencies": {
     "express": "^5.1.0",
