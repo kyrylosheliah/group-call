@@ -1,5 +1,7 @@
 # SFU group call app
 
+## Deployment prerequisites
+
 ```
 choco install mkcert
 mkdir ./.ssl/
@@ -14,7 +16,7 @@ cd ./compose-node-react/
 sudo docker-compose up --build
 ```
 
-### Goals:
+## Drawing board / TODOs
 - Room feature:
     - toggle camera
     - toggle microphone
@@ -33,5 +35,5 @@ sudo docker-compose up --build
     - "join room" action via link
 - (non-priority) Room upgrade feature to enable seamless call to group transition
 
-### Props
+## Props
 - Amir Eshaq SFU [implementation](https://github.com/jamalag/mediasoup3)
