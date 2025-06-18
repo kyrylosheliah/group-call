@@ -7,10 +7,10 @@ import { AppData, Consumer, DtlsParameters, MediaKind, Producer, ProducerOptions
 import { log1stage, log2stage } from "~/utils/logging";
 
 interface IConsumerTransport {
-  consumerTransport: Transport<AppData>;
+  consumerTransport: Transport;
   serverConsumerTransportId: string;
   producerId: string;
-  consumer: Consumer<AppData>;
+  consumer: Consumer;
 }
 
 interface IAudioParams {
@@ -18,7 +18,7 @@ interface IAudioParams {
 }
 
 interface IVideoParams {
-  params: ProducerOptions;
+  params: ProducerOptions;  
   track: MediaStreamTrack;
 }
 
@@ -43,11 +43,11 @@ export const joinGroupCall = (params: {
 
   let device: Device;
   let rtpCapabilities: RtpCapabilities;
-  let producerTransport: Transport<AppData>;
+  let producerTransport: Transport;
   const [consumerTransports, setConsumerTransports] = createSignal<Array<IConsumerTransport>>([]);
   const [localMediaStream, setLocalMediaStream] = createSignal<MediaStream>(undefined!);
-  let audioProducer: Producer<AppData>;
-  let videoProducer: Producer<AppData>;
+  let audioProducer: Producer;
+  let videoProducer: Producer;
 
   let consumingTransports: Array<string> = [];
 
@@ -314,7 +314,7 @@ export const joinGroupCall = (params: {
   }
 
   const connectRecvTransport = async (
-    consumerTransport: Transport<AppData>,
+    consumerTransport: Transport,
     remoteProducerId: string,
     serverConsumerTransportId: string,
   ) => {
