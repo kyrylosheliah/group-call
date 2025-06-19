@@ -17,9 +17,9 @@ export interface IPeers {
 export interface IPeer {
   socket: Socket;
   roomName: string;
-  //transports: [];
-  //producers: [];
-  //consumers: [];
+  transports: string[];
+  producers: string[];
+  consumers: string[];
   peerDetails: {
     name: string;
     isAdmin: boolean;

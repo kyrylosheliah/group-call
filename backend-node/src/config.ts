@@ -53,7 +53,6 @@ export const routerOptions: RouterOptions = {
       mimeType: "video/VP9",
       clockRate: 90000,
       parameters: {
-        "profile-id": 2,
         "x-google-start-bitrate": 1000,
       },
     },
@@ -63,18 +62,6 @@ export const routerOptions: RouterOptions = {
       clockRate: 90000,
       parameters: {
         "packetization-mode": 1,
-        "profile-level-id": "4d0032",
-        "level-asymmetry-allowed": 1,
-        "x-google-start-bitrate": 1000,
-      },
-    },
-    {
-      kind: "video",
-      mimeType: "video/h264",
-      clockRate: 90000,
-      parameters: {
-        "packetization-mode": 1,
-        "profile-level-id": "42e01f",
         "level-asymmetry-allowed": 1,
         "x-google-start-bitrate": 1000,
       },
@@ -88,20 +75,8 @@ export const webRtcServerOptions: WebRtcServerOptions = {
   listenInfos: [
     {
       protocol: "udp",
-      ip: "0.0.0.0",
-      announcedAddress: undefined,
-      port: 44444,
-    },
-    {
-      protocol: "tcp",
-      ip: "0.0.0.0",
-      announcedAddress: undefined,
-      port: 44444,
-    },
-    {
-      protocol: "udp",
       ip: domain,
-      announcedAddress: undefined,
+      announcedAddress: domain,
       portRange: {
         min: 40000,
         max: 49999,
@@ -110,7 +85,7 @@ export const webRtcServerOptions: WebRtcServerOptions = {
     {
       protocol: "tcp",
       ip: domain,
-      announcedAddress: undefined,
+      announcedAddress: domain,
       portRange: {
         min: 40000,
         max: 49999,
@@ -125,8 +100,8 @@ export const webRtcTransportOptions: WebRtcTransportOptions = {
   listenInfos: [
     {
       protocol: "udp",
-      ip: "0.0.0.0",
-      announcedAddress: undefined,
+      ip: domain,
+      announcedAddress: domain,
       portRange: {
         min: 40000,
         max: 49999,
@@ -134,8 +109,8 @@ export const webRtcTransportOptions: WebRtcTransportOptions = {
     },
     {
       protocol: "tcp",
-      ip: "0.0.0.0",
-      announcedAddress: undefined,
+      ip: domain,
+      announcedAddress: domain,
       portRange: {
         min: 40000,
         max: 49999,

@@ -6,16 +6,17 @@ const whitelistLogTags = (whitelist: Array<string>) => ({
         ? tag.some((tagElement) => whitelist.includes(tagElement))
         : whitelist.includes(tag)
     ) {
-      return ((message: any) => { console.log(message); });
+      return ((...args: any | any[]) => { console.log(...args); });
     } else {
-      return ((_: any) => {});
+      return ((_: any | any[]) => {});
     }
   },
 });
 
 //const logging = whitelistLogTags(["stage1", "stage2"]);
-const logging = whitelistLogTags(["stage3"]);
+const logging = whitelistLogTags(["event", "state", "method", "test"]);
 
-export const log1stage = logging.createTaggedLogger("stage1");
-export const log2stage = logging.createTaggedLogger("stage2");
-export const log3stage = logging.createTaggedLogger("stage3");
+export const logTest = logging.createTaggedLogger("test");
+export const logEvent = logging.createTaggedLogger("event");
+export const logState = logging.createTaggedLogger("state");
+export const logMethod = logging.createTaggedLogger("method");

@@ -8,7 +8,7 @@ const whitelistLogTags = (whitelist: string[]) => ({
 });
 
 //const logging = whitelistLogTags(["stage1", "stage2"]);
-const logging = whitelistLogTags([]);
+const logging = whitelistLogTags(["stage1", "stage2"]);
 
 export const log1stage = logging.createTaggedLogger("stage1");
 export const log2stage = logging.createTaggedLogger("stage2");

@@ -1,7 +1,7 @@
 import { createEffect, For, on, Show } from "solid-js";
 
 import { log1stage } from "~/utils/logging";
-import { joinGroupCall } from "~/hooks/JoinGroupCall";
+import { joinGroupCall } from "~/hooks/joinGroupCall";
 
 const GroupCall = (params: {
   roomName: string;
@@ -17,7 +17,8 @@ const GroupCall = (params: {
   });
 
   createEffect(on(localMediaStream, (lms) => {
-    localVideoRef!.srcObject = lms;
+    if (lms === undefined) return;
+    localVideoRef!.srcObject = new MediaStream([...lms.getVideoTracks()]);
   }));
 
   return (
@@ -34,16 +35,19 @@ const GroupCall = (params: {
           when={consumerTransports().length}
         >
           <For each={consumerTransports()}>{(ct, index) => {
-            if (ct.consumer.kind === "video") {
-              return <video autoplay class="video" ref={(videoRef) => {
-                log1stage("rendering consumer source index", index);
-                videoRef.srcObject = new MediaStream([ct.consumer.track]);
-              }}/>;
-            } else if (ct.consumer.kind === "audio") {
-              return <audio autoplay ref={(audioRef) => {
-                log1stage("rendering consumer source index", index);
-                audioRef.srcObject = new MediaStream([ct.consumer.track]);
-              }}/>;
+            switch (ct.consumer.kind) {
+              case "video":
+                return <video autoplay class="video" ref={(videoRef) => {
+                  log1stage("rendering consumer source index", index());
+                  videoRef.srcObject = new MediaStream([ct.consumer.track]);
+                  videoRef.play().catch((e) => console.warn("Video autoplay blocked:", e));
+                }}/>;
+              case "audio":
+                return <audio autoplay ref={(audioRef) => {
+                  log1stage("rendering consumer source index", index());
+                  audioRef.srcObject = new MediaStream([ct.consumer.track]);
+                  audioRef.play().catch((e) => console.warn("Audio autoplay blocked:", e));
+                }}/>;
             }
             return <></>;
           }}</For>

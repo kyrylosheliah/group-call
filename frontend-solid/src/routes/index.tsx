@@ -1,5 +1,4 @@
 import { A } from "@solidjs/router";
-import Counter from "~/components/Counter";
 
 export default function Home() {
   return (
@@ -9,7 +8,6 @@ export default function Home() {
           <span class="mr-5">Hello</span> <img class="w-12 h-12" src="https://unocss.dev/logo.svg" alt="UnoCSS logo" />!
         </div>
       </h1>
-      <Counter />
       <p class="mt-8">
         Visit{" "}
         <a
