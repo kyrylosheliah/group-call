@@ -1,7 +1,8 @@
 import { useNavigate, useParams } from "@solidjs/router";
-import GroupCall from "~/components/GroupCall";
+import CallRoom from "~/components/CallRoom";
+import { CallRoomContextProvider } from "~/providers/CallRoomProvider";
 
-export default function GroupCallRoom() {
+export default function CallRoomPage() {
   const params = useParams();
 
   const navigate = useNavigate();
@@ -11,8 +12,12 @@ export default function GroupCallRoom() {
 
   return (
     <main class="text-center mx-auto text-gray-700 p-4">
-      <div><button onClick={leave}>Leave</button></div>
-      <GroupCall roomName={params.id} />
+      <div>
+        <button onClick={leave}>Leave</button>
+      </div>
+      <CallRoomContextProvider roomName={() => params.id}>
+        <CallRoom />
+      </CallRoomContextProvider>
     </main>
   );
 }

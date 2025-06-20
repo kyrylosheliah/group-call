@@ -3,7 +3,7 @@ import fs from "fs";
 import https from "https";
 import { Server, Socket } from "socket.io";
 import * as config from "./config.js";
-import { logEvent, logState, logMethod, logTest } from "./logging.js";
+import { logEvent, logMethod } from "./logging.js";
 import * as mediasoup from "mediasoup";
 import { IConsumer, IPeers, IProducer, IRooms, ITransport } from "./types.js";
 import {
@@ -97,7 +97,7 @@ const onConnection = async (socket: Socket) => {
     producers = removeItems(producers, socket.id, "producer");
     transports = removeItems(transports, socket.id, "transport");
     if (!peers[socket.id]) {
-      console.log("error: a peer for socket", socket.id, "is undefined");
+      console.error("error: the peer for socket", socket.id, "is undefined");
       return;
     }
     const { roomName } = peers[socket.id];
@@ -276,7 +276,7 @@ const onConnection = async (socket: Socket) => {
     const { dtlsParameters } = data;
     const transport = findUnconsumedTransportBySocketId(socket.id);
     if (transport === undefined) {
-      console.log("error: the transport for socket", socket.id, "is undefined");
+      console.error("error: the transport for socket", socket.id, "is undefined");
       return;
     }
     logEvent("socket", socket.id, "> transport.on 'transport-connect' > transport.connect", transport.id);
@@ -292,7 +292,7 @@ const onConnection = async (socket: Socket) => {
     const { kind, rtpParameters, appData } = data;
     const transport = findUnconsumedTransportBySocketId(socket.id);
     if (transport === undefined) {
-      console.log("error: the transport for socket", socket.id, "is undefined");
+      console.error("error: the transport for socket", socket.id, "is undefined");
       return;
     }
     const producer = await transport.produce({ kind, rtpParameters });
@@ -322,7 +322,7 @@ const onConnection = async (socket: Socket) => {
       serverConsumerTransportId
     );
     if (consumerTransport === undefined) {
-      console.log("error: the consumerTransport for serverConsumerTransportId", serverConsumerTransportId, "is undefined");
+      console.error("error: the consumerTransport for serverConsumerTransportId", serverConsumerTransportId, "is undefined");
       return;
     }
     logEvent("socket", socket.id, "> transport.on 'transport-recv-connect' > consumerTransport.connect", consumerTransport.id);
@@ -341,7 +341,7 @@ const onConnection = async (socket: Socket) => {
         serverConsumerTransportId
       );
       if (consumerTransport === undefined) {
-        console.log("error: the consumerTransport for serverConsumerTransportId", serverConsumerTransportId, "is undefined");
+        console.error("error: the consumerTransport for serverConsumerTransportId", serverConsumerTransportId, "is undefined");
         return;
       }
       if (
@@ -389,7 +389,7 @@ const onConnection = async (socket: Socket) => {
     const { serverConsumerId } = data;
     const consumer = consumers.find((c) => c.consumer.id === serverConsumerId);
     if (consumer === undefined) {
-      console.log("error: the consumer for serverConsumerId", serverConsumerId, "is undefined");
+      console.error("error: the consumer for serverConsumerId", serverConsumerId, "is undefined");
       return;
     }
     await consumer.consumer.resume();

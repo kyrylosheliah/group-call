@@ -13,7 +13,6 @@ const whitelistLogTags = (whitelist: Array<string>) => ({
   },
 });
 
-//const logging = whitelistLogTags(["stage1", "stage2"]);
 const logging = whitelistLogTags(["event", "state", "method", "test"]);
 
 export const logTest = logging.createTaggedLogger("test");

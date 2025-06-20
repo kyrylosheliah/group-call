@@ -1,10 +1,9 @@
-import { createSignal, onCleanup, onMount } from "solid-js";
-
+import { Accessor, createEffect, createSignal, on, onCleanup } from "solid-js";
 import io, { Socket } from 'socket.io-client';
 import * as mediasoupClient from 'mediasoup-client';
 import { Device } from "mediasoup-client";
 import { AppData, Consumer, DtlsParameters, MediaKind, Producer, ProducerOptions, RtpCapabilities, RtpParameters, Transport, TransportOptions } from "mediasoup-client/types";
-import { log1stage, log2stage } from "~/utils/logging";
+import { logEvent, logMethod } from "~/utils/logging";
 
 interface IConsumerTransport {
   consumerTransport: Transport;
@@ -36,9 +35,18 @@ interface ISocketConsumeResponse {
   error: any;
 }
 
-export const joinGroupCall = (params: {
-  roomName: string;
-}) => {
+export interface IUseCallRoomReturn {
+  localMediaStream: Accessor<MediaStream>;
+  consumerTransports: Accessor<IConsumerTransport[]>;
+  logState: () => void;
+  roomName: Accessor<string>;
+  join: () => void;
+  leave: () => void;
+}
+
+export const useCallRoom = (params: {
+  roomName: Accessor<string>
+}): IUseCallRoomReturn => {
   let socket: Socket = undefined!;
 
   let device: Device;
@@ -67,8 +75,22 @@ export const joinGroupCall = (params: {
       },
     },
   };
-  
-  onMount(() => {
+
+  // use with `onCleanup` if hooking from inside of a context
+  const leave = () => {
+    if (socket === undefined) return;
+    if (!socket.disconnected) {
+      try {
+        socket.disconnect();
+      } catch (error) {}
+    }
+  };
+
+  //onCleanup(leave);
+  //createEffect(on(params.roomName, leave));
+
+  // use with `onMount` if hooking from inside of a context
+  const join = () => {
     socket = io(`https://${window.location.hostname}:3000/mediasoup`, {
       transports: ['websocket'],
     });
@@ -86,31 +108,27 @@ export const joinGroupCall = (params: {
       socketId: number,
       existsProducer: boolean,
     }) => {
-      log1stage("socket.on 'success' :", data);
+      logEvent("socket.on 'connection-success'");
+      logEvent("data", data);
       getLocalStream();
     });
 
     socket.on('new-producer', (data: {
       producerId: string
     }) => {
-      log1stage("socket.on 'new-producer' :", data);
+      logEvent("socket.on 'new-producer'");
+      logEvent("data", data);
       signalNewConsumerTransport(data.producerId);
     });
 
     socket.on('producer-closed', (data: {
       remoteProducerId: string
     }) => {
-      log1stage("socket.on 'producer-closed' :", data);
+      logEvent("socket.on 'producer-closed' :");
+      logEvent("data", data);
       closeConsumerTransport(data.remoteProducerId);
     });
-  });
-
-  onCleanup(() => {
-    if (socket !== undefined) {
-      try { socket.disconnect(); }
-      catch(error) {}
-    }
-  });
+  };
 
   const getLocalStream = () => {
     navigator.mediaDevices
@@ -125,8 +143,8 @@ export const joinGroupCall = (params: {
   };
 
   const streamSuccess = async (stream: MediaStream) => {
-    log1stage(`streamSuccess() :`, stream);
-    //localVideoRef!.srcObject = stream;
+    logMethod("streamSuccess()");
+    logMethod("stream", stream);
     setLocalMediaStream(stream);
     audioParams.track = stream.getAudioTracks()[0];
     videoParams.track = stream.getVideoTracks()[0];
@@ -134,41 +152,46 @@ export const joinGroupCall = (params: {
   };
 
   const joinRoom = () => {
-    socket.emit('joinRoom', { roomName: params.roomName }, (data: {
+    logEvent("socket.emit 'joinRoom'");
+    socket.emit('joinRoom', { roomName: params.roomName() }, (data: {
       rtpCapabilities: RtpCapabilities;
     }) => {
-      log1stage("socket.emit 'joinRoom' =>", data);
+      logEvent("socket.emit 'joinRoom' > callback");
+      logEvent("data", data);
       rtpCapabilities = data.rtpCapabilities;
       createDevice();
     });
   };
 
   const createDevice = async () => {
+    logMethod("createDevice()");
     try {
       device = new mediasoupClient.Device();
       await device.load({
         routerRtpCapabilities: rtpCapabilities,
       });
-      log1stage("createDevice() +", device);
+      logMethod("device", device);
       // once the device loads, create transport
       createSendTransport();
     } catch (error: any) {
-      console.log(error);
+      console.error(error);
       if (error.name === 'UnsupportedError') {
-        console.warn('browser not supported');
+        console.error('browser not supported');
       }
     }
   }
 
   const createSendTransport = () => {
+    logEvent("socket.emit 'createWebRtcTransport'");
     socket.emit('createWebRtcTransport', { consumer: false }, (
       data: TransportOptions
     ) => {
-      log1stage("socket.emit 'createWebRtcTransport' =>", data);
+      logEvent("socket.emit 'createWebRtcTransport' > callback");
+      logEvent("data", data);
 
       // TODO: check TransportOptions alternative return type documentation
       //if (data.params.error) {
-      //  console.log("[!error] socket.emit 'createWebRtcTransport' ... data.params.error");
+      //  console.error("error: socket.emit 'createWebRtcTransport' ... data.params.error");
       //  return;
       //}
 
@@ -181,7 +204,8 @@ export const joinGroupCall = (params: {
         callback: Function,
         errback: Function,
       ) => {
-        log1stage("producerTransport.on 'connect' :", data);
+        logEvent("producerTransport.on 'connect'");
+        logEvent("data", data);
         try {
           // signal local DTLS prameters to the server side transport
           socket.emit('transport-connect', { dtlsParameters: data.dtlsParameters });
@@ -201,10 +225,12 @@ export const joinGroupCall = (params: {
         callback: Function,
         errback: Function,
       ) => {
-        log1stage("producerTransport.on 'produce' :", data);
+        logEvent("producerTransport.on 'produce'");
+        logEvent("data", data);
         try {
           // thell the server to create a Producer with the following
           // parameters and produce and expect back a server side producer id
+          logEvent("producerTransport.on 'produce' > socket.emit 'transport-produce'");
           socket.emit(
             'transport-produce',
             {
@@ -213,7 +239,8 @@ export const joinGroupCall = (params: {
               appData: data.appData,
             },
             (data: ITransportProduceResponse) => {
-              log1stage("socket.emit 'transport-produce' =>", data);
+              logEvent("producerTransport.on 'produce' > socket.emit 'transport-produce' > callback");
+              logEvent("data", data);
               callback({ id: data.id });
               if (data.producersExist) {
                 getProducers();
@@ -230,49 +257,58 @@ export const joinGroupCall = (params: {
   };
 
   const connectSendTransport = async () => {
-    log1stage("connectSendTransport() :", audioParams);
-    log1stage("connectSendTransport() :", videoParams);
+    logMethod("connectSendTransport()");
+    logMethod("audioParams", audioParams);
+    logMethod("videoParams", videoParams);
 
-    //trigger the 'connect' and 'produce' events
+    // triggers the 'connect' and 'produce' events
     audioProducer = await producerTransport.produce(audioParams);
     videoProducer = await producerTransport.produce(videoParams);
 
-    log1stage("connectSendTransport() +", audioProducer, videoProducer);
+    logMethod("audioProducer", audioProducer);
+    logMethod("videoProducer", videoProducer);
 
     audioProducer.on('trackended', () => {
-      log1stage("audioProducer.on 'trackended'");
+      logEvent("audioProducer.on 'trackended'");
     });
     audioProducer.on('transportclose', () => {
-      log1stage("audioProducer.on 'transportclose'");
+      logEvent("audioProducer.on 'transportclose'");
     });
 
     videoProducer.on('trackended', () => {
-      log1stage("videoProducer.on 'trackended'");
+      logEvent("videoProducer.on 'trackended'");
     });
     videoProducer.on('transportclose', () => {
-      log1stage("videoProducer.on 'transportclose'");
+      logEvent("videoProducer.on 'transportclose'");
     });
   };
 
   const getProducers = () => {
+    logEvent("socket.emit 'getProducers'");
     socket.emit('getProducers', (producerIds: Array<string>) => {
-      log1stage("consumerTransport.emit 'getProducers' =>", producerIds);
+      logEvent("socket.emit 'getProducers' > callback")
+      logEvent("data", producerIds);
       producerIds.forEach(signalNewConsumerTransport);
     });
   };
 
   const signalNewConsumerTransport = async (remoteProducerId: string) => {
-    log1stage("signalNewConsumerTransport() :", remoteProducerId);
-    // race condition here
-    //if (consumerTransports().some((e) => e.producerId === remoteProducerId)) return;
-    // the following is preferred (atomic id tracking)
-    if (consumingTransports.includes(remoteProducerId)) return;
-    consumingTransports.push(remoteProducerId);
+    logMethod("signalNewConsumerTransport()");
+    logMethod("data", remoteProducerId);
 
+    // race condition
+    if (consumingTransports.includes(remoteProducerId)) return;
+    // race id tracking
+    consumingTransports.push(remoteProducerId);
+    //// the following won't be true until further communication
+    //if (consumerTransports().some((e) => e.producerId === remoteProducerId)) return;
+
+    logEvent("socket.emit 'createWebRtcTransport'");
     socket.emit('createWebRtcTransport', { consumer: true }, (
       data: TransportOptions,
     ) => {
-      log1stage("socket.emit 'createWebRtcTransport' =>", data);
+      logEvent("socket.emit 'createWebRtcTransport' > callback");
+      logEvent("data", data);
 
       // server sends back params needed to create Send Transport on client side
       //if (data.error) {
@@ -295,8 +331,10 @@ export const joinGroupCall = (params: {
         callback: Function,
         errback: Function,
       ) => {
-        log1stage("consumerTransport.on 'connect' :", data);
+        logEvent("consumerTransport.on 'connect'");
+        logEvent("data", data);
         try {
+          logEvent("consumerTransport.on 'connect' > socket.emit 'transport-recv-connect'");
           // signal local DTLS parameters to the server side transport
           socket.emit('transport-recv-connect', {
             dtlsParameters: data2.dtlsParameters,
@@ -318,7 +356,11 @@ export const joinGroupCall = (params: {
     remoteProducerId: string,
     serverConsumerTransportId: string,
   ) => {
-    log1stage("connectRecvTransport() :", consumerTransport, remoteProducerId, serverConsumerTransportId);
+    logMethod("connectRecvTransport()");
+    logMethod("consumerTransport", consumerTransport);
+    logMethod("remoteProducerId", remoteProducerId);
+    logMethod("serverConsumerTransportId", serverConsumerTransportId);
+    logEvent("socket.emit 'consume'");
     socket.emit(
       'consume',
       { 
@@ -327,7 +369,8 @@ export const joinGroupCall = (params: {
         serverConsumerTransportId,
       },
       async (data: ISocketConsumeResponse) => {
-        log1stage("socket.emit 'consume' :", data);
+        logEvent("socket.emit 'consume' > callback");
+        logEvent("data", data);
 
         if (data.error) {
           console.log('Cannot consume');
@@ -346,6 +389,7 @@ export const joinGroupCall = (params: {
           },
         ]);
 
+        logEvent("socket.emit 'consume' > callback > socket.emit 'consumer-resume'");
         // the server consumer started with media paused so we need to inform
         // the server to resume
         socket.emit('consumer-resume', { serverConsumerId: data.serverConsumerId });
@@ -354,17 +398,19 @@ export const joinGroupCall = (params: {
   };
 
   const closeConsumerTransport = (remoteProducerId: string) => {
-    // server notification is received when a producer is closed
+    // a server notification is received when a producer is closed
     // close the client-side consumer and an associated transport
-    log2stage(`self producer id ${producerTransport.id}`);
-    log2stage(`looking to delete producer id ${remoteProducerId}`);
+    logMethod(`self producer id ${producerTransport.id}`);
+    logMethod(`looking to delete producer id ${remoteProducerId}`);
     const producerToClose = consumerTransports().find(
       ct => ct.producerId === remoteProducerId
     );
-    if (producerToClose !== undefined) {
-      producerToClose.consumerTransport.close();
-      producerToClose.consumer.close();
+    if (producerToClose === undefined) {
+      console.error("producerToClose is undefined");
+      return;
     }
+    producerToClose.consumerTransport.close();
+    producerToClose.consumer.close();
     // remove consumer transport from the list
     setConsumerTransports(cts =>
       cts.filter(ct => ct.producerId !== remoteProducerId)
@@ -385,5 +431,8 @@ export const joinGroupCall = (params: {
     localMediaStream,
     consumerTransports,
     logState,
+    roomName: params.roomName,
+    join,
+    leave,
   };
 };

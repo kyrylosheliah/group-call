@@ -3,12 +3,10 @@
 ## Deployment prerequisites
 
 ```
-choco install mkcert
 mkdir ./.ssl/
 cd ./.ssl/
 mkcert -install -key-file key.pem -cert-file cert.pem localhost 127.0.0.1 ::1 192.168.1.109
-# copy and apply `C:\Users\I\AppData\Local\mkcert\rootCA.pem` on other
-# devices for LAN testing
+# copy and apply `rootCA.pem` on other devices for LAN testing
 ```
 
 ```

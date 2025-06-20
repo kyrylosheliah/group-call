@@ -1,14 +1,21 @@
-const whitelistLogTags = (whitelist: string[]) => ({
+const whitelistLogTags = (whitelist: Array<string>) => ({
   whitelist: whitelist,
-  createTaggedLogger: (tag: string) => (
-    whitelist.includes(tag)
-      ? (...message: any) => { console.log(message); }
-      : (..._: any) => {}
-  ),
+  createTaggedLogger: (tag: string) => {
+    if (
+      Array.isArray(tag)
+        ? tag.some((tagElement) => whitelist.includes(tagElement))
+        : whitelist.includes(tag)
+    ) {
+      return ((...args: any | any[]) => { console.log(...args); });
+    } else {
+      return ((_: any | any[]) => {});
+    }
+  },
 });
 
-//const logging = whitelistLogTags(["stage1", "stage2"]);
-const logging = whitelistLogTags(["stage1", "stage2"]);
+const logging = whitelistLogTags(["event", "method", "state", "component"]);
 
-export const log1stage = logging.createTaggedLogger("stage1");
-export const log2stage = logging.createTaggedLogger("stage2");
+export const logEvent = logging.createTaggedLogger("event");
+export const logMethod = logging.createTaggedLogger("method");
+export const logState = logging.createTaggedLogger("state");
+export const logComponent = logging.createTaggedLogger("component");
