@@ -43,7 +43,7 @@ const start = async () => {
     expressApp
   );
   httpsServer.listen(config.http.port, config.domain, () => {
-    console.log("listening on port: " + config.http.port);
+    console.log(`listening on ${config.domain}:${config.http.port}`);
   });
   const io = new Server(httpsServer, {
     cors: {
@@ -71,6 +71,8 @@ const start = async () => {
 
   connections.on("connection", onConnection);
 };
+
+// TODO: ensure stages are being executed only once per socket
 
 const onConnection = async (socket: Socket) => {
   logEvent("socket.on 'connection'", socket.id);
@@ -126,9 +128,8 @@ const onConnection = async (socket: Socket) => {
       return;
     }
     room.peers.push(socket.id);
-    logMethod("rooms ", rooms);
+    logMethod("rooms", rooms);
     logMethod("rooms[roomName] ", rooms[roomName]);
-    logMethod("router.id", room.router.id, " | room.peers.length", room.peers.length);
     peers[socket.id] = {
       socket,
       roomName,
@@ -185,7 +186,7 @@ const onConnection = async (socket: Socket) => {
           );
           logMethod("createWebRtcTransport() | transport.id", transport.id);
           transport.on("dtlsstatechange", (dtlsState) => {
-            logEvent("socket.on 'createWebRtcTransport' > transport.on 'dtlsstatechange'", socket.id);
+            logEvent("socket.on 'createWebRtcTransport'", socket.id, "> transport.on 'dtlsstatechange'");
             logEvent("dtlsState", dtlsState, "| transport.id", transport.id);
 
             if (dtlsState === "closed") {
@@ -279,10 +280,10 @@ const onConnection = async (socket: Socket) => {
       console.error("error: the transport for socket", socket.id, "is undefined");
       return;
     }
-    logEvent("socket", socket.id, "> transport.on 'transport-connect' > transport.connect", transport.id);
-    logEvent("peers[", socket.id, "].transports is ", peers[socket.id].transports);
-    logEvent("peers[", socket.id, "].consumers is ", peers[socket.id].consumers);
-    logEvent("peers[", socket.id, "].producers is ", peers[socket.id].producers);
+    logEvent("peers[", socket.id, "].transports are", peers[socket.id].transports);
+    logEvent("peers[", socket.id, "].consumers are", peers[socket.id].consumers);
+    logEvent("peers[", socket.id, "].producers are", peers[socket.id].producers);
+    logEvent("socket.on 'transport-connect'", socket.id, "> transport.connect()", transport.id);
     transport.connect({ dtlsParameters });
   });
 
@@ -300,7 +301,8 @@ const onConnection = async (socket: Socket) => {
     addProducer(producer, roomName);
     informConsumers(roomName, socket.id, producer.id);
     producer.on("transportclose", () => {
-      logEvent("socket.on 'transport-produce' > producer.on 'transportclose'", socket.id);
+      logEvent("socket.on 'transport-produce'", socket.id, "> producer.on 'transportclose'");
+      logEvent("socket.on 'transport-produce'", socket.id, "> producer.on 'transportclose' > producer.close()", producer.id);
       producer.close();
     });
     callback({
@@ -325,7 +327,7 @@ const onConnection = async (socket: Socket) => {
       console.error("error: the consumerTransport for serverConsumerTransportId", serverConsumerTransportId, "is undefined");
       return;
     }
-    logEvent("socket", socket.id, "> transport.on 'transport-recv-connect' > consumerTransport.connect", consumerTransport.id);
+    logEvent("socket.on 'transport-recv-connect'", socket.id, "> consumerTransport.connect()", consumerTransport.id);
     await consumerTransport.connect({ dtlsParameters });
   });
 
@@ -356,11 +358,11 @@ const onConnection = async (socket: Socket) => {
           paused: true,
         });
         consumer.on("transportclose", () => {
-          logEvent("socket.on 'consume' > consumer.on 'transportclose'", socket.id);
+          logEvent("socket.on 'consume'", socket.id, "> consumer.on 'transportclose'");
         });
         consumer.on("producerclose", () => {
-          logEvent("socket.on 'consume' > consumer.on 'producerclose'", socket.id);
-          logEvent("socket.on 'consume' > consumer.emit 'producer-closed'", socket.id);
+          logEvent("socket.on 'consume'", socket.id, "> consumer.on 'producerclose'");
+          logEvent("socket.on 'consume'", socket.id, "> consumer.emit 'producer-closed'");
           socket.emit("producer-closed", { remoteProducerId });
           consumerTransport.close();
           transports = transports.filter(

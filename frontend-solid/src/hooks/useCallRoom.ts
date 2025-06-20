@@ -1,4 +1,4 @@
-import { Accessor, createEffect, createSignal, on, onCleanup } from "solid-js";
+import { Accessor, createSignal, onMount, Setter } from "solid-js";
 import io, { Socket } from 'socket.io-client';
 import * as mediasoupClient from 'mediasoup-client';
 import { Device } from "mediasoup-client";
@@ -40,13 +40,15 @@ export interface IUseCallRoomReturn {
   consumerTransports: Accessor<IConsumerTransport[]>;
   logState: () => void;
   roomName: Accessor<string>;
+  setRoomName: Setter<string>;
+  userName: Accessor<string>;
+  setUserName: Setter<string>;
+  saveUserName: () => void;
   join: () => void;
   leave: () => void;
 }
 
-export const useCallRoom = (params: {
-  roomName: Accessor<string>
-}): IUseCallRoomReturn => {
+export const useCallRoom = (): IUseCallRoomReturn => {
   let socket: Socket = undefined!;
 
   let device: Device;
@@ -56,6 +58,22 @@ export const useCallRoom = (params: {
   const [localMediaStream, setLocalMediaStream] = createSignal<MediaStream>(undefined!);
   let audioProducer: Producer;
   let videoProducer: Producer;
+  const [roomName, setRoomName] = createSignal<string>("");
+
+  const [userName, setUserName] = createSignal<string>("");
+  const saveUserName = () => {
+    const name = userName().trim();
+    if (name) {
+      localStorage.setItem("userName", name);
+      setUserName(name);
+    } else {
+      alert("The user name is empty. Please, enter your display name.");
+    }
+  };
+  onMount(() => {
+    const savedUserName = localStorage.getItem("userName");
+    if (savedUserName !== null) setUserName(savedUserName);
+  });
 
   let consumingTransports: Array<string> = [];
 
@@ -153,7 +171,7 @@ export const useCallRoom = (params: {
 
   const joinRoom = () => {
     logEvent("socket.emit 'joinRoom'");
-    socket.emit('joinRoom', { roomName: params.roomName() }, (data: {
+    socket.emit('joinRoom', { roomName: roomName() }, (data: {
       rtpCapabilities: RtpCapabilities;
     }) => {
       logEvent("socket.emit 'joinRoom' > callback");
@@ -431,7 +449,11 @@ export const useCallRoom = (params: {
     localMediaStream,
     consumerTransports,
     logState,
-    roomName: params.roomName,
+    roomName,
+    setRoomName,
+    userName,
+    setUserName,
+    saveUserName,
     join,
     leave,
   };

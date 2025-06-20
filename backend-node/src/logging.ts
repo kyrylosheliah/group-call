@@ -6,7 +6,8 @@ const whitelistLogTags = (whitelist: Array<string>) => ({
         ? tag.some((tagElement) => whitelist.includes(tagElement))
         : whitelist.includes(tag)
     ) {
-      return ((...args: any | any[]) => { console.log(...args); });
+      const upperCaseTag = tag.toUpperCase()
+      return ((...args: any | any[]) => { console.log(`[${upperCaseTag}]`, ...args); });
     } else {
       return ((_: any | any[]) => {});
     }
