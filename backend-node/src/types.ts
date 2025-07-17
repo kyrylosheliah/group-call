@@ -5,9 +5,28 @@ export interface IRooms {
   [roomName: string]: IRoom;
 }
 
+export interface IMessage {
+  senderName: string;
+  message: string;
+  timestamp: number;
+}
+
+export interface IPendingUpload {
+  roomName: string,
+  uploaderName: string,
+  location: string,
+  rename: string,
+  expiresAt: number,
+}
+
+export interface IPendingUploads {
+  [id: string]: IPendingUpload;
+}
+
 export interface IRoom {
   router: types.Router;
   peers: Array<string>;
+  messages: Array<IMessage>;
 }
 
 export interface IPeers {
@@ -17,6 +36,7 @@ export interface IPeers {
 export interface IPeer {
   socket: Socket;
   roomName: string;
+  userName: string;
   transports: string[];
   producers: string[];
   consumers: string[];

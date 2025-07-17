@@ -1,11 +1,19 @@
-import express from "express";
+import express, { Request, Response } from "express";
 import fs from "fs";
 import https from "https";
 import { Server, Socket } from "socket.io";
 import * as config from "./config.js";
 import { logEvent, logMethod } from "./logging.js";
 import * as mediasoup from "mediasoup";
-import { IConsumer, IPeers, IProducer, IRooms, ITransport } from "./types.js";
+import {
+  IConsumer,
+  IMessage,
+  IPeers,
+  IPendingUploads,
+  IProducer,
+  IRooms,
+  ITransport,
+} from "./types.js";
 import {
   Consumer,
   Producer,
@@ -13,6 +21,8 @@ import {
   WebRtcTransport,
   Worker,
 } from "mediasoup/node/lib/types.js";
+import multer from "multer";
+import path from "path";
 
 const str = (o: any) => JSON.stringify(o);
 
@@ -22,6 +32,15 @@ var peers: IPeers = {};
 var transports: ITransport[] = [];
 var producers: IProducer[] = [];
 var consumers: IConsumer[] = [];
+
+function ensureDirectoryExists(dirPath: string) {
+  if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath);
+}
+
+var uploadsDir = path.join(process.cwd(), "uploads");
+ensureDirectoryExists(uploadsDir);
+var pendingUploads: IPendingUploads = {};
+const upload = multer({ dest: 'temp-uploads/' });
 
 const start = async () => {
   worker = await mediasoup.createWorker({
@@ -51,6 +70,39 @@ const start = async () => {
     },
   });
 
+  expressApp.post(
+    "/upload",
+    upload.single("file"),
+    (req: Request, res: Response) => {
+      const { uploadId } = req.body;
+      const file = req.file;
+      const session = pendingUploads[uploadId];
+      if (!session) {
+        res.status(403).json({ error: "Invalid upload ID" });
+        return;
+      }
+      if (file === undefined) {
+        res.status(403).json({ error: "File content missing" });
+        return;
+      }
+      if (session.expiresAt < Date.now()) {
+        delete pendingUploads[uploadId];
+        res.status(410).json({ error: "Upload ID expired" });
+        return;
+      }
+      const uploadPath = path.join(uploadsDir, session.roomName);
+      ensureDirectoryExists(uploadPath);
+      fs.mkdirSync(uploadPath, { recursive: true });
+
+      const destPath = path.join(uploadPath, file.originalname);
+      fs.rename(file.path, destPath, () => {
+        res.json({ success: true, path: destPath });
+      });
+
+      delete pendingUploads[uploadId];
+    },
+  );
+
   //const intervalId = setInterval(() => {
   //  logState("====\n====\n====");
   //  logState(`- transports`);
@@ -76,6 +128,8 @@ const start = async () => {
 
 const onConnection = async (socket: Socket) => {
   logEvent("socket.on 'connection'", socket.id);
+
+  // video and audio stream functionality with mediasoup
 
   logEvent("socket.emit 'connection-success'", socket.id);
   socket.emit("connection-success", {
@@ -115,11 +169,12 @@ const onConnection = async (socket: Socket) => {
   socket.on("joinRoom", async (data, callback) => {
     logEvent("socket.on 'joinRoom'", socket.id);
     logEvent("data", str(data));
-    const { roomName } = data;
+    const { roomName, userName } = data;
     if (rooms[roomName] === undefined) {
       rooms[roomName] = {
         router: null!, // `await` race condition here
-        peers: [], // but it prevent by registering sockets here
+        peers: [], // which is being prevented by registering sockets here
+        messages: [],
       };
       rooms[roomName].router = await worker.createRouter(config.routerOptions);
     }
@@ -133,6 +188,7 @@ const onConnection = async (socket: Socket) => {
     peers[socket.id] = {
       socket,
       roomName,
+      userName,
       transports: [],
       producers: [],
       consumers: [],
@@ -396,6 +452,66 @@ const onConnection = async (socket: Socket) => {
     }
     await consumer.consumer.resume();
   });
+
+  // messaging functionality
+
+  socket.on("chat-get", (callback) => {
+    const peer = peers[socket.id];
+    if (peer === undefined) {
+      callback({
+        error: "The connection wasn't set up yet ...",
+        status: "postpone",
+       });
+      return;
+    }
+    const room = rooms[peer.roomName];
+    if (room === undefined) {
+      callback({
+        error: "The room wasn't set up yet ...",
+        status: "postpone",
+       });
+      return;
+    }
+    callback({ messages: room.messages });
+  });
+
+  socket.on("chat-post", (data, callback) => {
+    const sender = peers[socket.id];
+    const message: IMessage = {
+      message: data,
+      senderName: sender.userName,
+      timestamp: Date.now(),
+    };
+    const room = rooms[sender.roomName];
+    room.messages.push(message);
+    callback({ status: "ok" });
+    // inform chatters
+    room.peers.forEach((pId) => {
+      const peer = peers[pId];
+      if (peer.socket.id === sender.socket.id) {
+        logMethod("won't inform", peer.socket.id, "of it's own message from", sender.socket.id);
+        return;
+      }
+      logMethod("will inform", peer.socket.id, "of", sender.socket.id, "'s mesage");
+      sender.socket.emit("chat-broadcast", message);
+    });
+  });
+
+  // file upload functionality
+
+  socket.on('request-upload', ({ location, rename }, callback) => {
+    const uploader = peers[socket.id];
+    const uploadId = crypto.randomUUID();
+    pendingUploads[uploadId] = {
+      roomName: uploader.roomName,
+      uploaderName: uploader.userName,
+      location: location,
+      rename: rename,
+      expiresAt: Date.now() + 10 * 60 * 1000,
+    };
+    callback({ uploadId });
+  });
+
 };
 
 start();

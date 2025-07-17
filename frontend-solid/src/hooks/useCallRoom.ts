@@ -171,7 +171,7 @@ export const useCallRoom = (): IUseCallRoomReturn => {
 
   const joinRoom = () => {
     logEvent("socket.emit 'joinRoom'");
-    socket.emit('joinRoom', { roomName: roomName() }, (data: {
+    socket.emit('joinRoom', { roomName: roomName(), userName: userName() }, (data: {
       rtpCapabilities: RtpCapabilities;
     }) => {
       logEvent("socket.emit 'joinRoom' > callback");
